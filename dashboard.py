@@ -54,14 +54,15 @@ class IPv4HTTPSHandler(HTTPSHandler):
 DELTA_OPENER = build_opener(ProxyHandler({}), IPv4HTTPSHandler())
 
 
-def delta_request(method, path, order=None):
-    values = {}
-    for line in DASHBOARD.with_name(".env").read_text(encoding="utf-8-sig").splitlines():
-        name, _, value = line.partition("=")
-        if name.strip() in {"DELTA_API_KEY", "DELTA_API_SECRET"}:
-            values[name.strip()] = value.strip().strip("'\"")
-    key = values.get("DELTA_API_KEY")
-    secret = values.get("DELTA_API_SECRET")
+def delta_request(method, path, order=None, *, credentials=None):
+    if credentials is None:
+        values = {}
+        for line in DASHBOARD.with_name(".env").read_text(encoding="utf-8-sig").splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() in {"DELTA_API_KEY", "DELTA_API_SECRET"}:
+                values[name.strip()] = value.strip().strip("'\"")
+        credentials = (values.get("DELTA_API_KEY"), values.get("DELTA_API_SECRET"))
+    key, secret = credentials
     if not key or not secret:
         raise ValueError("Delta API credentials are missing.")
 

@@ -22,6 +22,12 @@ The engine starts with new entries disabled. Select contracts, submit a timefram
 
 The Python engine uses Delta candle data. It builds 10-minute candles from consecutive 5-minute candles and uses UTC day boundaries for session VWAP. Exact indicator parity with Delta's chart and the live order lifecycle have yet to be verified. Strategy entry and exit reason labels are available for orders sent by versions that include reason tags.
 
+## Deploy the Streamlit dashboard
+
+In Streamlit Community Cloud, select this GitHub repository, branch `main`, and main file path `streamlit_app.py`. For a local preview, run `python -m pip install -r requirements.txt` and `python -m streamlit run streamlit_app.py`.
+
+The Streamlit app opens without credentials and can show open positions and recent orders after you connect with a read-only Delta India key. The credentials stay in your Streamlit browser session's server-side state. Delta must allowlist the cloud server's outbound IP for that key. The live order engine and Start/Stop controls run through `python dashboard.py` on your own machine.
+
 ## Source files
 
 - `dashboard.py` serves the local dashboard and signs Delta API requests.
