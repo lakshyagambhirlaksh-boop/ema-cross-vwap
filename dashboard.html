@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delta Strategy Dashboard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #87ceeb;
+      color: #eef4fa;
+      font: 1rem/1.5 system-ui, sans-serif;
+    }
+    main {
+      width: min(100% - 2rem, 44rem);
+      margin: clamp(2rem, 8vw, 6rem) auto;
+      padding: clamp(1.25rem, 4vw, 2.5rem);
+      background: #151f2e;
+      border: 1px solid #2d4055;
+      border-radius: 1rem;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 44rem) minmax(0, 13rem);
+      gap: 1rem;
+      justify-content: center;
+      align-items: start;
+      margin: clamp(1rem, 5vw, 4rem) auto;
+      padding: 0 1rem;
+    }
+    .layout main { width: 100%; margin: 0; }
+    aside {
+      position: sticky;
+      top: 1rem;
+      padding: 1rem;
+      border: 1px solid #2d4055;
+      border-radius: .75rem;
+      background: #151f2e;
+    }
+    aside h2 { margin: 0 0 .4rem; }
+    .connection { margin-top: 1rem; }
+    #delta-status[data-connected="true"] { color: #91e6af; }
+    #delta-status[data-connected="false"] { color: #ffb4b4; }
+    #public-ip { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    @media (max-width: 700px) {
+      .layout { grid-template-columns: minmax(0, 44rem); }
+      aside { grid-row: 1; z-index: 1; top: .5rem; }
+    }
+    h1 { margin: 0 0 1.25rem; font-size: clamp(1.5rem, 4vw, 2rem); }
+    li {
+      padding: .75rem;
+      text-align: center;
+      font-weight: 600;
+      background: #1d2e40;
+      border-radius: .5rem;
+    }
+    section { margin-top: 2rem; }
+    h2 { font-size: 1.15rem; }
+    form, .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+    label { display: grid; gap: .3rem; }
+    button, select, input {
+      padding: .55rem .75rem;
+      border: 1px solid #506a83;
+      border-radius: .4rem;
+      background: #1d2e40;
+      color: inherit;
+      font: inherit;
+    }
+    button { cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    button[type="submit"], #start { background: #155a56; }
+    #quantity { width: 7rem; }
+    .lot-controls { display: grid; gap: .5rem; justify-items: start; }
+    fieldset { flex-basis: 100%; min-width: 0; border: 1px solid #506a83; border-radius: .4rem; }
+    .contracts { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .45rem; }
+    .contracts label, .all-contracts { display: flex; align-items: center; gap: .4rem; }
+    .all-contracts { margin-bottom: .6rem; }
+    .positions-table { overflow-x: auto; }
+    .positions-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    .positions-table th, .positions-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #2d4055; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+  <main>
+    <h1>Delta Strategy Dashboard</h1>
+    <section>
+      <form id="timeframe-form">
+        <label>Timeframe
+          <select id="timeframe" required>
+            <option>1 min</option>
+            <option selected>3 min</option>
+            <option>5 min</option>
+            <option>10 min</option>
+            <option>15 min</option>
+            <option>30 min</option>
+            <option>1 hr</option>
+          </select>
+        </label>
+        <button type="submit">Submit timeframe</button>
+      </form>
+      <p id="timeframe-status" role="status">Selected timeframe · 3 min</p>
+    </section>
+    <section>
+      <h2>Strategy controls</h2>
+      <div class="controls">
+        <button type="button" id="start">Start strategy</button>
+        <button type="button" id="stop" disabled>Stop strategy</button>
+        <div class="lot-controls">
+          <label>Lots per contract
+            <input id="quantity" name="quantity" form="contract-form" type="number" min="1" step="1" value="1" required>
+          </label>
+          <button type="submit" form="contract-form">Save contract selection</button>
+        </div>
+      </div>
+      <p id="strategy-status" role="status">Stopped</p>
+      <p id="contract-status" role="status"></p>
+    </section>
+    <section>
+      <h2>Strategy contracts</h2>
+      <form id="contract-form">
+        <fieldset>
+          <legend>Contracts</legend>
+          <label class="all-contracts"><input type="checkbox" id="all-contracts"> Select all</label>
+          <div class="contracts">
+            <label><input type="checkbox" name="contract" value="BTCUSD"> BTCUSD</label>
+            <label><input type="checkbox" name="contract" value="ETHUSD"> ETHUSD</label>
+            <label><input type="checkbox" name="contract" value="SOLUSD"> SOLUSD</label>
+            <label><input type="checkbox" name="contract" value="XRPUSD"> XRPUSD</label>
+            <label><input type="checkbox" name="contract" value="XAUTUSD"> XAUTUSD</label>
+            <label><input type="checkbox" name="contract" value="DOGEUSD"> DOGEUSD</label>
+            <label><input type="checkbox" name="contract" value="BNBUSD"> BNBUSD</label>
+            <label><input type="checkbox" name="contract" value="LTCUSD"> LTCUSD</label>
+            <label><input type="checkbox" name="contract" value="SLVONUSD"> SLVONUSD</label>
+            <label><input type="checkbox" name="contract" value="OILUSD"> OILUSD</label>
+          </div>
+        </fieldset>
+      </form>
+    </section>
+    <section aria-labelledby="positions-heading">
+      <h2 id="positions-heading">Open positions</h2>
+      <p id="positions-status" role="status">Checking Delta positions…</p>
+      <div id="positions-table" class="positions-table" hidden>
+        <table aria-labelledby="positions-heading">
+          <thead><tr>
+            <th scope="col">Contract</th><th scope="col">Side</th><th scope="col">Lots</th>
+            <th scope="col">Entry price</th><th scope="col">Mark price</th><th scope="col">Unrealized P&amp;L</th>
+          </tr></thead>
+          <tbody id="positions-rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section aria-labelledby="activity-heading">
+      <h2 id="activity-heading">Recent activity</h2>
+      <p id="activity-status" role="status">Checking Delta order history…</p>
+      <div id="activity-table" class="positions-table" hidden>
+        <table aria-labelledby="activity-heading">
+          <thead><tr>
+            <th scope="col">Time</th><th scope="col">Contract</th><th scope="col">Side</th>
+            <th scope="col">Status</th><th scope="col">Filled lots</th><th scope="col">Fill price</th>
+            <th scope="col">Reason</th>
+          </tr></thead>
+          <tbody id="activity-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <aside aria-labelledby="ip-heading">
+    <h2 id="ip-heading">Public IPv4 address</h2>
+    <output id="public-ip">Checking…</output>
+    <div class="connection">
+      <h2>Delta connection</h2>
+      <div id="delta-status" role="status">Checking…</div>
+    </div>
+  </aside>
+  </div>
+  <script>
+    const publicIp = document.querySelector("#public-ip");
+    let publicIpPending = false;
+    async function refreshPublicIp() {
+      if (publicIpPending) return;
+      publicIpPending = true;
+      try {
+        const response = await fetch("/api/public-ip", { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const result = await response.json();
+        publicIp.textContent = result.ip;
+      } catch {
+        publicIp.textContent = "Unavailable";
+      } finally {
+        publicIpPending = false;
+      }
+    }
+
+    const deltaStatus = document.querySelector("#delta-status");
+    let deltaStatusPending = false;
+    async function refreshDeltaStatus() {
+      if (deltaStatusPending) return;
+      deltaStatusPending = true;
+      try {
+        const response = await fetch("/api/delta-status", { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const result = await response.json();
+        deltaStatus.dataset.connected = String(result.connected);
+        deltaStatus.textContent = result.connected ? "Connected" : "Not connected";
+        deltaStatus.title = result.reason || "";
+      } catch {
+        deltaStatus.dataset.connected = "false";
+        deltaStatus.textContent = "Not connected";
+        deltaStatus.title = "Dashboard status request failed";
+      } finally {
+        deltaStatusPending = false;
+      }
+    }
+
+    function refreshDashboard() {
+      refreshPublicIp();
+      refreshDeltaStatus();
+      refreshMarketData();
+      refreshStrategyStatus();
+      refreshPositions();
+      refreshActivity();
+    }
+
+    const timeframeForm = document.querySelector("#timeframe-form");
+    const timeframe = document.querySelector("#timeframe");
+    const timeframeStatus = document.querySelector("#timeframe-status");
+    let selectedTimeframe = "3 min";
+
+    timeframeForm.addEventListener("submit", event => {
+      event.preventDefault();
+      selectedTimeframe = timeframe.value;
+      timeframeStatus.textContent = "Selected timeframe · " + selectedTimeframe;
+    });
+
+    const start = document.querySelector("#start");
+    const stop = document.querySelector("#stop");
+    const status = document.querySelector("#strategy-status");
+    const form = document.querySelector("#contract-form");
+    const contractStatus = document.querySelector("#contract-status");
+    const allContracts = document.querySelector("#all-contracts");
+    const contractInputs = [...form.querySelectorAll('input[name="contract"]')];
+    let latestMarketData = null;
+    let marketPending = false;
+    async function refreshMarketData() {
+      if (marketPending) return;
+      marketPending = true;
+      try {
+        const response = await fetch("/api/market-data", { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        latestMarketData = await response.json();
+      } catch {
+        latestMarketData = null;
+      } finally {
+        marketPending = false;
+      }
+    }
+    allContracts.addEventListener("change", () => {
+      for (const input of contractInputs) input.checked = allContracts.checked;
+    });
+    for (const input of contractInputs) {
+      input.addEventListener("change", () => {
+        const selected = contractInputs.filter(contract => contract.checked).length;
+        allContracts.checked = selected === contractInputs.length;
+        allContracts.indeterminate = selected > 0 && !allContracts.checked;
+      });
+    }
+    let strategyRequestPending = false;
+    let strategyStatusPending = false;
+    function showStrategyState(state) {
+      start.disabled = state.running;
+      stop.disabled = !state.running;
+      status.textContent = (state.running ? "Running live" : "Entries stopped") +
+        " · " + state.positions + " tracked position(s)";
+      const errors = Object.entries(state.errors);
+      if (errors.length) status.textContent += " · " + errors.map(([symbol, error]) => symbol + " " + error).join(" · ");
+    }
+    async function refreshStrategyStatus() {
+      if (strategyStatusPending || strategyRequestPending) return;
+      strategyStatusPending = true;
+      try {
+        const response = await fetch("/api/strategy", { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const state = await response.json();
+        if (!strategyRequestPending) showStrategyState(state);
+      } catch {
+        if (!strategyRequestPending) status.textContent = "Strategy status unavailable.";
+      } finally {
+        strategyStatusPending = false;
+      }
+    }
+    async function controlStrategy(action, settings = {}) {
+      if (strategyRequestPending) return;
+      strategyRequestPending = true;
+      start.disabled = stop.disabled = true;
+      try {
+        const response = await fetch("/api/strategy/" + action, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(settings)
+        });
+        const state = await response.json();
+        if (!response.ok) throw new Error(state.message);
+        showStrategyState(state);
+      } catch (error) {
+        status.textContent = "Could not " + action + " strategy. " + error.message;
+      } finally {
+        strategyRequestPending = false;
+      }
+    }
+    start.addEventListener("click", () => {
+      const fields = new FormData(form);
+      const contracts = fields.getAll("contract");
+      const lots = Number(fields.get("quantity"));
+      if (!contracts.length || !Number.isSafeInteger(lots) || lots < 1) {
+        contractStatus.textContent = "Select at least one contract and enter a whole number of lots.";
+        return;
+      }
+      if (window.confirm("Start live strategy on " + contracts.join(", ") + "? " +
+          selectedTimeframe + ", " + lots + " lot(s) per contract.")) {
+        controlStrategy("start", { contracts, timeframe: selectedTimeframe, lots });
+      }
+    });
+    stop.addEventListener("click", () => controlStrategy("stop"));
+    const contractSettingsKey = "delta-strategy-contracts";
+    const quantity = document.querySelector("#quantity");
+    try {
+      const saved = JSON.parse(localStorage.getItem(contractSettingsKey) || "null");
+      if (saved && Array.isArray(saved.contracts)) {
+        for (const input of contractInputs) input.checked = saved.contracts.includes(input.value);
+        const selected = contractInputs.filter(input => input.checked).length;
+        allContracts.checked = selected === contractInputs.length;
+        allContracts.indeterminate = selected > 0 && !allContracts.checked;
+        if (Number.isSafeInteger(saved.lots) && saved.lots > 0) quantity.value = saved.lots;
+      }
+    } catch {
+      contractStatus.textContent = "Saved selection is unavailable.";
+    }
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const fields = new FormData(form);
+      const contracts = fields.getAll("contract");
+      const lots = Number(fields.get("quantity"));
+      if (!contracts.length) {
+        contractStatus.textContent = "Select at least one contract.";
+        return;
+      }
+      if (!Number.isSafeInteger(lots) || lots < 1) return;
+      try {
+        localStorage.setItem(contractSettingsKey, JSON.stringify({ contracts, lots }));
+        contractStatus.textContent = "Saved " + contracts.length + " contract(s) in this browser.";
+      } catch {
+        contractStatus.textContent = "Could not save the selection in this browser.";
+      }
+    });
+    const positionsStatus = document.querySelector("#positions-status");
+    const positionsTable = document.querySelector("#positions-table");
+    const positionsRows = document.querySelector("#positions-rows");
+    let positionsPending = false;
+    let positionsUrl = "/api/positions";
+    async function refreshPositions() {
+      if (positionsPending) return;
+      positionsPending = true;
+      try {
+        let response = await fetch(positionsUrl, { cache: "no-store" });
+        if (response.status === 404 && positionsUrl === "/api/positions" && location.port === "8768") {
+          positionsUrl = "http://127.0.0.1:8770/api/positions";
+          response = await fetch(positionsUrl, { cache: "no-store" });
+        }
+        if (!response.ok) throw new Error();
+        const { positions } = await response.json();
+        const rows = document.createDocumentFragment();
+        for (const position of positions) {
+          const row = document.createElement("tr");
+          for (const value of [position.contract, position.side, position.lots, position.entry, position.mark, position.pnl]) {
+            row.insertCell().textContent = value ?? "—";
+          }
+          rows.append(row);
+        }
+        positionsRows.replaceChildren(rows);
+        positionsTable.hidden = positions.length === 0;
+        positionsStatus.textContent = positions.length ? "" : "No open positions.";
+      } catch {
+        positionsStatus.textContent = positionsTable.hidden
+          ? "Delta positions unavailable."
+          : "Could not refresh positions. The displayed values may be out of date.";
+      } finally {
+        positionsPending = false;
+      }
+    }
+    const activityStatus = document.querySelector("#activity-status");
+    const activityTable = document.querySelector("#activity-table");
+    const activityRows = document.querySelector("#activity-rows");
+    let activityPending = false;
+    let activityUrl = "/api/activity";
+    let lastActivity = "";
+    function activityTime(value) {
+      if (value == null) return "—";
+      const numeric = Number(value);
+      const milliseconds = numeric > 1e14 ? numeric / 1000 : numeric > 1e11 ? numeric : numeric * 1000;
+      const date = new Date(Number.isFinite(numeric) ? milliseconds : value);
+      return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    }
+    async function refreshActivity() {
+      if (activityPending) return;
+      activityPending = true;
+      try {
+        let response = await fetch(activityUrl, { cache: "no-store" });
+        if (response.status === 404 && activityUrl === "/api/activity" && location.port === "8768") {
+          activityUrl = "http://127.0.0.1:8770/api/activity";
+          response = await fetch(activityUrl, { cache: "no-store" });
+        }
+        if (!response.ok) throw new Error();
+        const { activities } = await response.json();
+        const snapshot = JSON.stringify(activities);
+        if (snapshot !== lastActivity) {
+          const rows = document.createDocumentFragment();
+          for (const activity of activities) {
+            const row = document.createElement("tr");
+            const state = activity.state === "closed" ? "Filled" : activity.state;
+            for (const value of [activityTime(activity.time), activity.contract, activity.side, state,
+              activity.filled_lots, activity.price, activity.reason]) {
+              row.insertCell().textContent = value ?? "—";
+            }
+            rows.append(row);
+          }
+          activityRows.replaceChildren(rows);
+          lastActivity = snapshot;
+        }
+        activityTable.hidden = activities.length === 0;
+        activityStatus.textContent = activities.length ? "" : "No recent orders.";
+      } catch {
+        activityStatus.textContent = activityTable.hidden
+          ? "Delta order history unavailable."
+          : "Could not refresh order history. The displayed activity may be out of date.";
+      } finally {
+        activityPending = false;
+      }
+    }
+    refreshDashboard();
+    setInterval(refreshDashboard, 1000);
+  </script>
+</body>
+</html>

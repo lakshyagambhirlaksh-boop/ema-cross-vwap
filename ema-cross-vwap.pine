@@ -1,0 +1,97 @@
+﻿//@version=6
+strategy("Delta India 3m - 8 EMA Crosses VWAP", overlay = true, pyramiding = 0,
+     calc_on_every_tick = true, calc_on_order_fills = true)
+
+bool ignoreSessionOpen = input.bool(true, "Ignore crosses on the first bar of each session")
+string markPriceSymbol = input.symbol("", "Delta mark-price symbol",
+     tooltip = "Select the Delta mark-price feed for this contract. The EMA 5 exit requires both feeds.")
+
+var array<string> supportedContracts = array.from(
+     "BTCUSD.P", "ETHUSD.P", "SOLUSD.P", "XRPUSD.P", "XAUTUSD.P",
+     "DOGEUSD.P", "BNBUSD.P", "LTCUSD.P", "SLVONUSD.P", "OILUSD.P")
+
+if syminfo.prefix != "DELTAIN" or not array.includes(supportedContracts, syminfo.ticker)
+    runtime.error("Open a supported Delta Exchange India perpetual (DELTAIN:).")
+
+if not timeframe.isminutes or timeframe.multiplier != 3
+    runtime.error("Set the chart timeframe to 3 minutes.")
+
+if not chart.is_standard
+    runtime.error("Use standard candles so the indicators use exchange OHLC prices.")
+
+bool newSession = timeframe.change("1D") or barstate.isfirst
+float ema = ta.ema(close, 8)
+float ema5 = ta.ema(close, 5)
+float vwap = ta.vwap(ohlc4, newSession)
+float rsi = ta.rsi(close, 14)
+bool crossedAbove = ta.crossover(ema, vwap)
+bool crossedBelow = ta.crossunder(ema, vwap)
+bool hasMarkSymbol = markPriceSymbol != "" and ticker.standard(markPriceSymbol) != ticker.standard(syminfo.tickerid)
+[markTime, markLow, markHigh, markEma5] = request.security(
+     markPriceSymbol, timeframe.period, [time, low, high, ta.ema(close, 5)],
+     gaps = barmerge.gaps_on, lookahead = barmerge.lookahead_off, ignore_invalid_symbol = true)
+bool tradedMiss = high < ema5 or low > ema5
+bool markMiss = hasMarkSymbol and markTime == time and (markHigh < markEma5 or markLow > markEma5)
+varip int rsiExitBar = na
+varip float previousPosition = 0.0
+varip float activeLongStop = na
+varip float activeShortStop = na
+bool orderFilled = strategy.position_size != previousPosition
+previousPosition := strategy.position_size
+
+if orderFilled and strategy.position_size > 0 and not na(activeLongStop)
+    float entryPrice = strategy.position_avg_price
+    float risk = entryPrice - activeLongStop
+    if risk > 0
+        float target = math.round_to_mintick(entryPrice + 4 * risk)
+        strategy.exit("Long SL/TP", from_entry = "Long", stop = activeLongStop, limit = target)
+else if orderFilled and strategy.position_size < 0 and not na(activeShortStop)
+    float entryPrice = strategy.position_avg_price
+    float risk = activeShortStop - entryPrice
+    if risk > 0
+        float target = math.round_to_mintick(entryPrice - 4 * risk)
+        strategy.exit("Short SL/TP", from_entry = "Short", stop = activeShortStop, limit = target)
+
+bool evaluateSignals = barstate.isrealtime or not orderFilled
+if evaluateSignals and strategy.position_size > 0 and rsi >= 74
+    strategy.close("Long", comment = "RSI exit", immediately = true)
+    rsiExitBar := bar_index
+else if evaluateSignals and strategy.position_size < 0 and rsi <= 20
+    strategy.close("Short", comment = "RSI exit", immediately = true)
+    rsiExitBar := bar_index
+
+bool exitedOnThisBar = not na(rsiExitBar) and rsiExitBar == bar_index
+bool evaluateClose = barstate.isconfirmed and not orderFilled
+bool emaExit = evaluateClose and not exitedOnThisBar and strategy.position_size != 0 and tradedMiss and markMiss
+if emaExit
+    strategy.close(strategy.position_size > 0 ? "Long" : "Short", comment = "EMA 5 exit")
+
+bool canTrade = evaluateClose and (not ignoreSessionOpen or not newSession) and not exitedOnThisBar and not emaExit
+bool longSignal = canTrade and crossedAbove and close > vwap
+bool shortSignal = canTrade and crossedBelow and close < vwap
+bool insidePreviousBody = close >= math.min(open[1], close[1]) and close <= math.max(open[1], close[1])
+bool waitForLong = canTrade and longSignal[1] and insidePreviousBody
+bool waitForShort = canTrade and shortSignal[1] and insidePreviousBody
+bool firstLongConfirmation = canTrade and longSignal[1] and close > high[1]
+bool firstShortConfirmation = canTrade and shortSignal[1] and close < low[1]
+bool longConfirmed = firstLongConfirmation or (canTrade and waitForLong[1] and close > high[2])
+bool shortConfirmed = firstShortConfirmation or (canTrade and waitForShort[1] and close < low[2])
+float longStop = firstLongConfirmation ? low[2] : low[3]
+float shortStop = firstShortConfirmation ? high[2] : high[3]
+
+if longConfirmed and not shortConfirmed and strategy.position_size <= 0 and not na(longStop)
+    activeLongStop := longStop
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long SL/TP", from_entry = "Long", stop = activeLongStop)
+else if shortConfirmed and not longConfirmed and strategy.position_size >= 0 and not na(shortStop)
+    activeShortStop := shortStop
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short SL/TP", from_entry = "Short", stop = activeShortStop)
+
+plot(ema, "8 EMA", color = color.maroon, linewidth = 2)
+plot(ema5, "5 EMA", color = color.gray)
+plot(vwap, "Session VWAP (OHLC4)", color = color.blue, linewidth = 2)
+plotshape(longSignal, "Long signal candle", shape.circle, location.belowbar, color.blue, size = size.tiny)
+plotshape(longConfirmed, "Long confirmation candle", shape.triangleup, location.belowbar, color.lime, size = size.tiny)
+plotshape(shortSignal, "Short signal candle", shape.circle, location.abovebar, color.blue, size = size.tiny)
+plotshape(shortConfirmed, "Short confirmation candle", shape.triangledown, location.abovebar, color.red, size = size.tiny)

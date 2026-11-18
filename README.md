@@ -1,0 +1,33 @@
+# Delta EMA / VWAP Strategy
+
+A local dashboard and Python trading engine for Delta Exchange India perpetual futures. The dashboard shows connection status, open positions, and recent order activity. The repository also includes a separate TradingView Pine strategy.
+
+## Run locally
+
+Use Python 3.10 or later. The dashboard uses the Python standard library.
+
+1. Copy `.env.example` to `.env`. In PowerShell, run `Copy-Item .env.example .env`.
+2. Set `DELTA_API_KEY` and `DELTA_API_SECRET` in your local `.env`. Allowlist the server's public IPv4 address in Delta and enable the key's trading permission for live execution.
+3. Run `python dashboard.py` from the project folder.
+4. Open [the dashboard](http://127.0.0.1:8768/) in a browser or in the VS Code Integrated Browser.
+
+The engine starts with new entries disabled. Select contracts, submit a timeframe, and set lots per contract before using **Start strategy**. Confirming Start enables real order submissions when a setup qualifies. **Stop strategy** pauses new entries while the running process continues managing its tracked positions. Keep the Python process running for software-managed exits. Position tracking is stored locally in `.delta-positions.json`.
+
+## Trading rules
+
+- An 8 EMA cross above or below session VWAP (OHLC4) creates a setup when the traded-price candle closes on the same side of VWAP. The next candle must close beyond the signal candle's high for a long or low for a short.
+- If the first confirmation closes inside the signal candle's body, the setup gets one additional candle to confirm against the original high or low.
+- The stop is the low of the candle before the signal for a long, or its high for a short. The target is four times the distance from the actual entry fill to that stop.
+- Running-candle RSI exits at 74 or higher for longs and 20 or lower for shorts. The EMA 5 exit occurs at candle close when both the traded-price and mark-price candles miss their respective EMA 5.
+
+The Python engine uses Delta candle data. It builds 10-minute candles from consecutive 5-minute candles and uses UTC day boundaries for session VWAP. Exact indicator parity with Delta's chart and the live order lifecycle have yet to be verified. Strategy entry and exit reason labels are available for orders sent by versions that include reason tags.
+
+## Source files
+
+- `dashboard.py` serves the local dashboard and signs Delta API requests.
+- `dashboard.html` contains the dashboard.
+- `delta_strategy.py` evaluates candles and trade rules.
+- `live_strategy.py` places orders and tracks strategy positions.
+- `ema-cross-vwap.pine` is the TradingView strategy for chart testing.
+
+Keep `.env`, API credentials, and the local position journal outside version control.

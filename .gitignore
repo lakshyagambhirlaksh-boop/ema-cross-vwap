@@ -1,0 +1,8 @@
+/.env
+/.env.*
+!/.env.example
+/.delta-positions.json
+/.delta-positions.tmp
+__pycache__/
+*.py[cod]
+.venv/
