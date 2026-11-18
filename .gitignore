@@ -3,6 +3,9 @@
 !/.env.example
 /.delta-positions.json
 /.delta-positions.tmp
+/.delta-cloud-*.json
+/.delta-cloud-*.tmp
+/.streamlit/secrets.toml
 __pycache__/
 *.py[cod]
 .venv/

@@ -1,11 +1,16 @@
-"""Read-only Delta account dashboard for Streamlit Community Cloud."""
+"""Delta account dashboard and authenticated live strategy controls for Streamlit."""
 
 from ipaddress import IPv4Address
+from hashlib import sha256
+from hmac import compare_digest
+from pathlib import Path
 
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
-from delta_client import CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request
+from delta_client import CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request, public_delta
 from delta_strategy import RESOLUTIONS
+from live_strategy import LiveStrategy
 
 
 st.set_page_config(page_title="Delta Strategy Dashboard", layout="wide")
@@ -66,8 +71,8 @@ def public_ipv4():
         return "Unavailable"
 
 
-def read_account(path):
-    result = delta_request("GET", path, credentials=st.session_state.delta_credentials)
+def read_account(path, credentials):
+    result = delta_request("GET", path, credentials=credentials)
     if result.get("success") is not True:
         details = result.get("error") or {}
         code = details.get("code", "unknown_error")
@@ -100,12 +105,57 @@ def update_all_contracts(symbols):
     )
 
 
+def live_secrets():
+    try:
+        key = st.secrets.get("DELTA_API_KEY")
+        secret = st.secrets.get("DELTA_API_SECRET")
+        access = st.secrets.get("DASHBOARD_ACCESS_CODE")
+    except StreamlitSecretNotFoundError:
+        return None
+    if all(isinstance(value, str) and value.strip() for value in (key, secret, access)):
+        return (key.strip(), secret.strip()), access
+    return None
+
+
+@st.cache_resource(show_spinner=False)
+def cloud_engine(account_id, _credentials):
+    def signed_request(method, path, order=None):
+        return delta_request(method, path, order, credentials=_credentials)
+
+    journal = Path(__file__).with_name(f".delta-cloud-{account_id}.json")
+    engine = LiveStrategy(signed_request, public_delta, journal)
+    engine.launch()
+    return engine
+
+
+configured_live = live_secrets()
+engine = None
+credentials = st.session_state.get("delta_credentials")
+if configured_live:
+    live_credentials, access_code = configured_live
+    account_id = sha256(live_credentials[0].encode()).hexdigest()[:20]
+    access_digest = sha256(access_code.encode()).hexdigest()
+    engine = cloud_engine(account_id, live_credentials)
+    authorized = st.session_state.get("live_account") == (account_id, access_digest)
+    credentials = live_credentials if authorized else None
+else:
+    authorized = False
+
 main, sidebar = st.columns([3.4, 1], gap="small")
 with sidebar, st.container(border=True, key="cloud-account"):
     st.subheader("Public IPv4 address")
     st.write(public_ipv4())
     st.subheader("Delta connection")
-    if "delta_credentials" not in st.session_state:
+    if configured_live and not authorized:
+        st.caption("Live controls locked")
+        with st.form("unlock_live_controls", clear_on_submit=True, border=False):
+            entered_code = st.text_input("Dashboard access code", type="password")
+            if st.form_submit_button("Unlock"):
+                if compare_digest(sha256(entered_code.encode()).hexdigest(), access_digest):
+                    st.session_state.live_account = (account_id, access_digest)
+                    st.rerun()
+                st.error("Incorrect dashboard access code.")
+    elif credentials is None:
         st.caption("Not connected")
         with st.expander("Connect read-only account"), st.form("delta_account", clear_on_submit=True, border=False):
             key = st.text_input("Read-only Delta API key", type="password")
@@ -119,18 +169,21 @@ with sidebar, st.container(border=True, key="cloud-account"):
     else:
         connection_status = st.empty()
         if st.button("Disconnect"):
-            del st.session_state.delta_credentials
+            st.session_state.pop("delta_credentials", None)
+            st.session_state.pop("live_account", None)
             st.rerun()
         st.button("Refresh account data")
 
 positions = orders = None
-if "delta_credentials" in st.session_state:
+connected = False
+if credentials:
     try:
-        positions = read_account("/v2/positions/margined")
-        orders = read_account("/v2/orders/history?page_size=50")
+        positions = read_account("/v2/positions/margined", credentials)
+        orders = read_account("/v2/orders/history?page_size=50", credentials)
     except (OSError, ValueError, KeyError) as error:
         connection_status.error(str(error))
     else:
+        connected = True
         connection_status.success("Connected to Delta India")
 
 with main, st.container(border=True, key="cloud-controls"):
@@ -146,15 +199,28 @@ with main, st.container(border=True, key="cloud-controls"):
     st.caption(f"Selected timeframe · {st.session_state.get('selected_timeframe', '3 min')}")
 
     st.subheader("Strategy controls")
+    strategy_state = engine.status() if authorized else None
+    running = bool(strategy_state and strategy_state["running"])
     start_col, stop_col, lots_col = st.columns([1, 1, 2], vertical_alignment="bottom")
     with start_col:
-        st.button("Start strategy", disabled=True)
+        start_clicked = st.button("Start strategy", disabled=not authorized or not connected or running)
     with stop_col:
-        st.button("Stop strategy", disabled=True)
+        stop_clicked = st.button("Stop strategy", disabled=not running)
     with lots_col:
         lots = st.number_input("Lots per contract", min_value=1, step=1, value=1)
         save_selection = st.button("Save contract selection")
-    st.caption("Read-only cloud view. Start and Stop are available in the local dashboard.")
+    if stop_clicked and authorized:
+        engine.stop()
+        st.session_state.pop("confirm_live_start", None)
+        st.rerun()
+    if strategy_state:
+        st.caption(f"{'Running live' if running else 'Entries stopped'} · {strategy_state['positions']} tracked position(s)")
+        for symbol, error in strategy_state["errors"].items():
+            st.error(f"{symbol}: {error}")
+    elif configured_live:
+        st.caption("Unlock the Delta panel to use live controls.")
+    else:
+        st.caption("Live controls require Delta credentials and an access code in Streamlit Secrets.")
 
     st.subheader("Strategy contracts")
     symbols = available_contracts()
@@ -173,6 +239,28 @@ with main, st.container(border=True, key="cloud-controls"):
     if "contract_selection" in st.session_state:
         saved, saved_lots = st.session_state.contract_selection
         st.caption(f"Saved · {len(saved)} contract(s) · {saved_lots} lot(s) per contract")
+    if start_clicked and authorized and connected:
+        if selected:
+            st.session_state.confirm_live_start = (
+                selected, st.session_state.get("selected_timeframe", "3 min"), lots,
+            )
+        else:
+            st.warning("Select at least one contract.")
+    if authorized and connected and not running and "confirm_live_start" in st.session_state:
+        contracts, interval, order_lots = st.session_state.confirm_live_start
+        st.warning(f"Enable real Delta orders for {', '.join(contracts)} · {interval} · {order_lots} lot(s) per contract.")
+        confirm_col, cancel_col = st.columns(2)
+        if confirm_col.button("Confirm live start"):
+            try:
+                engine.start(contracts, interval, order_lots)
+            except (OSError, ValueError, KeyError, ArithmeticError) as error:
+                st.error(str(error))
+            else:
+                del st.session_state.confirm_live_start
+                st.rerun()
+        if cancel_col.button("Cancel"):
+            del st.session_state.confirm_live_start
+            st.rerun()
 
     st.subheader("Open positions")
     if positions is None:

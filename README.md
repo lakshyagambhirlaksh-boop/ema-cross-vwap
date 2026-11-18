@@ -26,7 +26,17 @@ The Python engine uses Delta candle data. It builds 10-minute candles from conse
 
 In Streamlit Community Cloud, select this GitHub repository, branch `main`, and main file path `streamlit_app.py`. Existing deployments using `dashboard.py` also open the Streamlit dashboard. For a local preview, run `python -m pip install -r requirements.txt` and `python -m streamlit run streamlit_app.py`.
 
-The Streamlit app opens without credentials and can show open positions and recent orders after you connect with a read-only Delta India key. The credentials stay in your Streamlit browser session's server-side state. Delta must allowlist the cloud server's outbound IP for that key. The live order engine and Start/Stop controls run through `python dashboard.py` on your own machine.
+The Streamlit app opens without credentials. You can connect with a read-only key to see positions and recent orders, or enable live controls by adding these values in Streamlit Cloud's app Secrets:
+
+```toml
+DELTA_API_KEY = "your_delta_india_trade_enabled_key"
+DELTA_API_SECRET = "your_delta_api_secret"
+DASHBOARD_ACCESS_CODE = "a_long_unique_random_access_code"
+```
+
+Delta must allowlist the cloud server's outbound IPv4 for the live key. Unlock the dashboard, select contracts and lots, submit your timeframe, and confirm **Start strategy** to enable real orders. **Stop strategy** pauses entries and continues managing positions opened by that engine. Run only one strategy engine for the same account and contracts. If you change the credentials for the same API key, reboot the Streamlit app to refresh the cached trading connection.
+
+Streamlit Community Cloud can sleep or restart. While its process is down, the software RSI and EMA 5 exits cannot run. Delta's accepted stop-loss and target orders remain on the exchange. Cloud storage also does not guarantee that the position journal survives a redeploy. Use the local engine or an always-on host with persistent storage when continuous management is required.
 
 ## Source files
 
