@@ -10,8 +10,9 @@ var array<string> supportedContracts = array.from(
      "BTCUSD.P", "ETHUSD.P", "SOLUSD.P", "XRPUSD.P", "XAUTUSD.P",
      "DOGEUSD.P", "BNBUSD.P", "LTCUSD.P", "SLVONUSD.P", "OILUSD.P")
 
-if syminfo.prefix != "DELTAIN" or not array.includes(supportedContracts, syminfo.ticker)
-    runtime.error("Open a supported Delta Exchange India perpetual (DELTAIN:).")
+bool datedFuture = syminfo.type == "futures" and not str.contains(syminfo.ticker, "!") and not str.endswith(syminfo.ticker, ".P")
+if syminfo.prefix != "DELTAIN" or not (array.includes(supportedContracts, syminfo.ticker) or datedFuture)
+    runtime.error("Open a supported Delta Exchange India futures contract (DELTAIN:).")
 
 if not timeframe.isminutes or timeframe.multiplier != 3
     runtime.error("Set the chart timeframe to 3 minutes.")

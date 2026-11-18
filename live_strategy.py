@@ -1,6 +1,7 @@
 """Run the Delta strategy and reconcile its positions with the exchange."""
 
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
@@ -9,6 +10,24 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from delta_strategy import RESOLUTIONS, entry_setup, exit_reason, fetch_candles
+
+
+CONTRACTS = frozenset("BTCUSD ETHUSD SOLUSD XRPUSD XAUTUSD DOGEUSD BNBUSD LTCUSD SLVONUSD OILUSD".split())
+
+
+def valid_contract_symbol(symbol):
+    return isinstance(symbol, str) and re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,79}", symbol) is not None
+
+
+def tradeable_product(public, symbol):
+    if not valid_contract_symbol(symbol):
+        raise ValueError("Invalid Delta contract symbol.")
+    product = public("/v2/products/" + symbol)
+    kind = product.get("contract_type")
+    allowed = kind == "futures" or (kind == "perpetual_futures" and symbol in CONTRACTS)
+    if not allowed or product.get("symbol") != symbol or product.get("state") != "live":
+        raise ValueError(f"{symbol} is outside the supported live Delta futures markets.")
+    return product
 
 
 ORDER_REASONS = {
@@ -44,7 +63,7 @@ class LiveStrategy:
     def start(self, contracts, timeframe, lots):
         products = {}
         for symbol in contracts:
-            product = self.public("/v2/products/" + symbol)
+            product = tradeable_product(self.public, symbol)
             tick = Decimal(str(product["tick_size"]))
             if not tick.is_finite() or tick <= 0:
                 raise ValueError("Invalid Delta tick size for " + symbol)

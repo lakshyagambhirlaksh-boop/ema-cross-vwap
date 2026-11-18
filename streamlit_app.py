@@ -4,7 +4,7 @@ from ipaddress import IPv4Address
 
 import streamlit as st
 
-from dashboard import CONTRACTS, DELTA_OPENER, activity_row, delta_request
+from dashboard import CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request
 from delta_strategy import RESOLUTIONS
 
 
@@ -81,14 +81,22 @@ def read_account(path):
     return result["result"]
 
 
-def select_all_contracts():
-    for symbol in CONTRACTS:
+@st.cache_data(ttl=300, show_spinner=False)
+def available_contracts():
+    try:
+        return sorted(CONTRACTS | set(dated_futures()))
+    except (OSError, ValueError, TypeError):
+        return sorted(CONTRACTS)
+
+
+def select_all_contracts(symbols):
+    for symbol in symbols:
         st.session_state[f"contract_{symbol}"] = st.session_state.select_all_contracts
 
 
-def update_all_contracts():
+def update_all_contracts(symbols):
     st.session_state.select_all_contracts = all(
-        st.session_state.get(f"contract_{symbol}", False) for symbol in CONTRACTS
+        st.session_state.get(f"contract_{symbol}", False) for symbol in symbols
     )
 
 
@@ -149,12 +157,13 @@ with main, st.container(border=True, key="cloud-controls"):
     st.caption("Read-only cloud view. Start and Stop are available in the local dashboard.")
 
     st.subheader("Strategy contracts")
-    st.checkbox("Select all", key="select_all_contracts", on_change=select_all_contracts)
+    symbols = available_contracts()
+    st.checkbox("Select all", key="select_all_contracts", on_change=select_all_contracts, args=(symbols,))
     contract_columns = st.columns(5)
     selected = []
-    for index, symbol in enumerate(sorted(CONTRACTS)):
+    for index, symbol in enumerate(symbols):
         with contract_columns[index % len(contract_columns)]:
-            if st.checkbox(symbol, key=f"contract_{symbol}", on_change=update_all_contracts):
+            if st.checkbox(symbol, key=f"contract_{symbol}", on_change=update_all_contracts, args=(symbols,)):
                 selected.append(symbol)
     if save_selection:
         if selected:

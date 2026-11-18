@@ -240,6 +240,7 @@
     const form = document.querySelector("#contract-form");
     const contractStatus = document.querySelector("#contract-status");
     const allContracts = document.querySelector("#all-contracts");
+    const contractsGrid = form.querySelector(".contracts");
     const contractInputs = [...form.querySelectorAll('input[name="contract"]')];
     let latestMarketData = null;
     let marketPending = false;
@@ -259,13 +260,12 @@
     allContracts.addEventListener("change", () => {
       for (const input of contractInputs) input.checked = allContracts.checked;
     });
-    for (const input of contractInputs) {
-      input.addEventListener("change", () => {
-        const selected = contractInputs.filter(contract => contract.checked).length;
-        allContracts.checked = selected === contractInputs.length;
-        allContracts.indeterminate = selected > 0 && !allContracts.checked;
-      });
+    function updateContractSelection() {
+      const selected = contractInputs.filter(contract => contract.checked).length;
+      allContracts.checked = selected === contractInputs.length;
+      allContracts.indeterminate = selected > 0 && !allContracts.checked;
     }
+    contractsGrid.addEventListener("change", updateContractSelection);
     let strategyRequestPending = false;
     let strategyStatusPending = false;
     function showStrategyState(state) {
@@ -324,18 +324,41 @@
     stop.addEventListener("click", () => controlStrategy("stop"));
     const contractSettingsKey = "delta-strategy-contracts";
     const quantity = document.querySelector("#quantity");
+    let savedContracts = [];
     try {
       const saved = JSON.parse(localStorage.getItem(contractSettingsKey) || "null");
       if (saved && Array.isArray(saved.contracts)) {
-        for (const input of contractInputs) input.checked = saved.contracts.includes(input.value);
-        const selected = contractInputs.filter(input => input.checked).length;
-        allContracts.checked = selected === contractInputs.length;
-        allContracts.indeterminate = selected > 0 && !allContracts.checked;
+        savedContracts = saved.contracts;
+        for (const input of contractInputs) input.checked = savedContracts.includes(input.value);
+        updateContractSelection();
         if (Number.isSafeInteger(saved.lots) && saved.lots > 0) quantity.value = saved.lots;
       }
     } catch {
       contractStatus.textContent = "Saved selection is unavailable.";
     }
+    async function loadDatedFutures() {
+      try {
+        const response = await fetch("/api/contracts", { cache: "no-store" });
+        if (!response.ok) return;
+        const { dated_futures } = await response.json();
+        for (const symbol of dated_futures) {
+          if (contractInputs.some(input => input.value === symbol)) continue;
+          const label = document.createElement("label");
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.name = "contract";
+          input.value = symbol;
+          input.checked = allContracts.checked || savedContracts.includes(symbol);
+          label.append(input, " " + symbol);
+          contractsGrid.append(label);
+          contractInputs.push(input);
+        }
+        updateContractSelection();
+      } catch {
+        // The configured perpetuals are still available.
+      }
+    }
+    loadDatedFutures();
 
     form.addEventListener("submit", event => {
       event.preventDefault();

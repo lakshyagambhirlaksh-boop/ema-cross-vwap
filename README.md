@@ -1,6 +1,6 @@
 # Delta EMA / VWAP Strategy
 
-A local dashboard and Python trading engine for Delta Exchange India perpetual futures. The dashboard shows connection status, open positions, and recent order activity. The repository also includes a separate TradingView Pine strategy.
+A local dashboard and Python trading engine for Delta Exchange India futures. The dashboard lists the ten configured perpetuals and any active dated futures returned by Delta India. The engine validates each contract against Delta's product metadata. The dashboard also shows connection status, open positions, and recent order activity. The repository includes a separate TradingView Pine strategy.
 
 ## Run locally
 

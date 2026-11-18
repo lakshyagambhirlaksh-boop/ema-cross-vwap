@@ -18,11 +18,10 @@ from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles, session_vwap
-from live_strategy import ORDER_REASONS, LiveStrategy
+from live_strategy import CONTRACTS, ORDER_REASONS, LiveStrategy, tradeable_product, valid_contract_symbol
 
 
 DASHBOARD = Path(__file__).with_suffix(".html")
-CONTRACTS = frozenset("BTCUSD ETHUSD SOLUSD XRPUSD XAUTUSD DOGEUSD BNBUSD LTCUSD SLVONUSD OILUSD".split())
 DELTA_URL = "https://api.india.delta.exchange"
 POSITIONS_PATH = "/api/positions"
 ACTIVITY_PATH = "/api/activity"
@@ -97,11 +96,20 @@ def public_delta(path):
 STRATEGY = LiveStrategy(delta_request, public_delta, DASHBOARD.with_name(".delta-positions.json"))
 
 
+def dated_futures():
+    products = public_delta("/v2/products?states=live&contract_types=futures&page_size=100")
+    return sorted({
+        product["symbol"] for product in products
+        if product.get("contract_type") == "futures" and product.get("state") == "live"
+        and valid_contract_symbol(product.get("symbol"))
+    })
+
+
 def order_payload(data):
     if not isinstance(data, dict):
         raise ValueError("Invalid order.")
     contract, side, size = (data.get(field) for field in ("contract", "side", "size"))
-    if not isinstance(contract, str) or contract not in CONTRACTS or side not in ("buy", "sell"):
+    if not valid_contract_symbol(contract) or side not in ("buy", "sell"):
         raise ValueError("Select a supported contract and side.")
     if type(size) is not int or not 1 <= size <= 2_147_483_647:
         raise ValueError("Enter a positive whole number of lots.")
@@ -138,8 +146,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             order = order_payload(data)
+            tradeable_product(public_delta, order["product_symbol"])
         except ValueError as error:
             self.send_json(400, {"message": str(error)})
+            return
+        except OSError:
+            self.send_json(502, {"message": "Could not verify the Delta contract."})
             return
         try:
             result = delta_request("POST", "/v2/orders", order)
@@ -160,8 +172,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"message": "Invalid strategy settings."})
             return
         contracts, timeframe, lots = (data.get(field) for field in ("contracts", "timeframe", "lots"))
-        if (not isinstance(contracts, list) or not 1 <= len(contracts) <= len(CONTRACTS)
-                or not all(isinstance(symbol, str) and symbol in CONTRACTS for symbol in contracts)
+        if (not isinstance(contracts, list) or not contracts
+                or not all(valid_contract_symbol(symbol) for symbol in contracts)
                 or not isinstance(timeframe, str) or timeframe not in RESOLUTIONS
                 or type(lots) is not int or not 1 <= lots <= 2_147_483_647):
             self.send_json(400, {"message": "Check the selected contracts, timeframe, and lots."})
@@ -188,6 +200,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path == "/api/contracts":
+            try:
+                futures = dated_futures()
+            except (OSError, ValueError, TypeError):
+                self.send_json(502, {"message": "Delta futures list unavailable."})
+            else:
+                self.send_json(200, {"dated_futures": futures})
+            return
         if path == POSITIONS_PATH:
             self.send_positions()
             return
@@ -201,12 +221,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             symbol = query.get("contract", ["XAUTUSD"])[0]
             timeframe = query.get("timeframe", ["3 min"])[0]
-            if symbol not in CONTRACTS or timeframe not in RESOLUTIONS:
+            if not valid_contract_symbol(symbol) or timeframe not in RESOLUTIONS:
                 self.send_json(400, {"message": "Invalid contract or timeframe."})
                 return
             now = int(time.time())
             seconds, _ = RESOLUTIONS[timeframe]
             try:
+                tradeable_product(public_delta, symbol)
                 traded = fetch_candles(public_delta, symbol, timeframe, now)
                 mark = fetch_candles(public_delta, "MARK:" + symbol, timeframe, now)
                 closed = [candle for candle in traded if candle.time + seconds <= now]
@@ -227,12 +248,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/market-data":
             try:
-                data = public_delta("/v2/tickers?contract_types=perpetual_futures")
+                data = public_delta("/v2/tickers?contract_types=perpetual_futures,futures")
                 if not isinstance(data, list):
                     raise ValueError("Invalid ticker response")
                 tickers = {
                     ticker["symbol"]: {"last": ticker.get("close"), "mark": ticker.get("mark_price")}
-                    for ticker in data if ticker.get("symbol") in CONTRACTS
+                    for ticker in data if ticker.get("symbol") in CONTRACTS or ticker.get("contract_type") == "futures"
                 }
                 if not tickers:
                     raise ValueError("No supported tickers")
