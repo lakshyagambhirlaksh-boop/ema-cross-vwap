@@ -1,8 +1,10 @@
 """Read-only Delta account dashboard for Streamlit Community Cloud."""
 
+from ipaddress import IPv4Address
+
 import streamlit as st
 
-from dashboard import CONTRACTS, activity_row, delta_request
+from dashboard import CONTRACTS, DELTA_OPENER, activity_row, delta_request
 from delta_strategy import RESOLUTIONS
 
 
@@ -12,13 +14,20 @@ st.markdown(
     <style>
     [data-testid="stAppViewContainer"] { background: #87ceeb; }
     [data-testid="stHeader"] { background: transparent; }
-    [data-testid="stMainBlockContainer"] { max-width: 66rem; padding-top: 4rem; }
+    [data-testid="stMainBlockContainer"] {
+        max-width: 62rem;
+        padding: 3rem clamp(1rem, 4vw, 2rem) 2rem;
+    }
     [data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-cloud-controls),
     [data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-cloud-account),
     .st-key-cloud-controls, .st-key-cloud-account {
         background: #151f2e;
         color: #eef4fa;
         border-radius: 1rem;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:has(> .st-key-cloud-controls),
+    [data-testid="stVerticalBlockBorderWrapper"]:has(> .st-key-cloud-account) {
+        border: 1px solid #2d4055;
     }
     .st-key-cloud-controls, .st-key-cloud-account {
         --text-color: #eef4fa;
@@ -38,10 +47,23 @@ st.markdown(
         background: #155a56;
         color: #fff;
     }
+    .st-key-cloud-controls button:disabled { opacity: .55; }
+    .st-key-cloud-controls [data-testid="stCaptionContainer"],
+    .st-key-cloud-account [data-testid="stCaptionContainer"] { color: #d0deea; }
+    .st-key-cloud-account [data-testid="stExpander"] { color: #eef4fa; }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def public_ipv4():
+    try:
+        with DELTA_OPENER.open("https://api.ipify.org", timeout=2) as response:
+            return str(IPv4Address(response.read(128).decode().strip()))
+    except (OSError, ValueError):
+        return "Unavailable"
 
 
 def read_account(path):
@@ -70,12 +92,14 @@ def update_all_contracts():
     )
 
 
-main, sidebar = st.columns([3.4, 1.25], gap="medium")
+main, sidebar = st.columns([3.4, 1], gap="small")
 with sidebar, st.container(border=True, key="cloud-account"):
+    st.subheader("Public IPv4 address")
+    st.write(public_ipv4())
     st.subheader("Delta connection")
     if "delta_credentials" not in st.session_state:
         st.caption("Not connected")
-        with st.form("delta_account", clear_on_submit=True):
+        with st.expander("Connect read-only account"), st.form("delta_account", clear_on_submit=True, border=False):
             key = st.text_input("Read-only Delta API key", type="password")
             secret = st.text_input("Delta API secret", type="password")
             if st.form_submit_button("Connect"):
@@ -103,23 +127,36 @@ if "delta_credentials" in st.session_state:
 
 with main, st.container(border=True, key="cloud-controls"):
     st.title("Delta Strategy Dashboard")
-    st.caption("Read-only cloud view. Use the local dashboard for live strategy controls.")
     with st.form("timeframe_form", border=False):
-        timeframe = st.selectbox("Timeframe", tuple(RESOLUTIONS), index=1)
-        if st.form_submit_button("Submit timeframe"):
+        interval_col, submit_col, _ = st.columns([1, 1.7, 2], vertical_alignment="bottom")
+        with interval_col:
+            timeframe = st.selectbox("Timeframe", tuple(RESOLUTIONS), index=1)
+        with submit_col:
+            apply_timeframe = st.form_submit_button("Submit timeframe")
+        if apply_timeframe:
             st.session_state.selected_timeframe = timeframe
     st.caption(f"Selected timeframe · {st.session_state.get('selected_timeframe', '3 min')}")
 
+    st.subheader("Strategy controls")
+    start_col, stop_col, lots_col = st.columns([1, 1, 2], vertical_alignment="bottom")
+    with start_col:
+        st.button("Start strategy", disabled=True)
+    with stop_col:
+        st.button("Stop strategy", disabled=True)
+    with lots_col:
+        lots = st.number_input("Lots per contract", min_value=1, step=1, value=1)
+        save_selection = st.button("Save contract selection")
+    st.caption("Read-only cloud view. Start and Stop are available in the local dashboard.")
+
     st.subheader("Strategy contracts")
     st.checkbox("Select all", key="select_all_contracts", on_change=select_all_contracts)
-    contract_columns = st.columns(3)
+    contract_columns = st.columns(5)
     selected = []
     for index, symbol in enumerate(sorted(CONTRACTS)):
         with contract_columns[index % len(contract_columns)]:
             if st.checkbox(symbol, key=f"contract_{symbol}", on_change=update_all_contracts):
                 selected.append(symbol)
-    lots = st.number_input("Lots per contract", min_value=1, step=1, value=1)
-    if st.button("Save contract selection"):
+    if save_selection:
         if selected:
             st.session_state.contract_selection = (selected, lots)
         else:
