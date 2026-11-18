@@ -1,6 +1,6 @@
 """Delta account dashboard and authenticated live strategy controls for Streamlit."""
 
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, ip_address
 from hashlib import sha256
 from hmac import compare_digest
 from pathlib import Path
@@ -71,6 +71,12 @@ def public_ipv4():
         return "Unavailable"
 
 
+class DeltaConnectionError(ValueError):
+    def __init__(self, message, address=None):
+        super().__init__(message)
+        self.address = address
+
+
 def read_account(path, credentials):
     result = delta_request("GET", path, credentials=credentials)
     if result.get("success") is not True:
@@ -78,12 +84,24 @@ def read_account(path, credentials):
         code = details.get("code", "unknown_error")
         if code == "ip_not_whitelisted_for_api_key":
             address = (details.get("context") or {}).get("client_ip")
-            message = "Delta rejected the cloud server's IP for this key."
-            if address:
-                message += f" Delta reported {address}."
-            raise ValueError(message)
-        raise ValueError(f"Delta returned {code}.")
+            try:
+                address = str(ip_address(address))
+            except ValueError:
+                address = None
+            raise DeltaConnectionError("Delta rejected this server IP for the configured API key.", address)
+        raise DeltaConnectionError(f"Delta returned {code}.")
     return result["result"]
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def connection_check(credential_digest, _credentials):
+    try:
+        read_account("/v2/positions/margined", _credentials)
+    except DeltaConnectionError as error:
+        return False, str(error), error.address
+    except (OSError, ValueError, KeyError):
+        return False, "Could not reach or read the Delta API.", None
+    return True, None, None
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -112,8 +130,8 @@ def live_secrets():
         access = st.secrets.get("DASHBOARD_ACCESS_CODE")
     except StreamlitSecretNotFoundError:
         return None
-    if all(isinstance(value, str) and value.strip() for value in (key, secret, access)):
-        return (key.strip(), secret.strip()), access
+    if all(isinstance(value, str) and value.strip() for value in (key, secret)):
+        return (key.strip(), secret.strip()), access if isinstance(access, str) and access.strip() else None
     return None
 
 
@@ -128,11 +146,12 @@ def cloud_engine(account_id, _credentials):
     return engine
 
 
-configured_live = live_secrets()
+configured_account = live_secrets()
+configured_live = bool(configured_account and configured_account[1])
 engine = None
 credentials = st.session_state.get("delta_credentials")
 if configured_live:
-    live_credentials, access_code = configured_live
+    live_credentials, access_code = configured_account
     account_id = sha256(live_credentials[0].encode()).hexdigest()[:20]
     access_digest = sha256(access_code.encode()).hexdigest()
     engine = cloud_engine(account_id, live_credentials)
@@ -146,6 +165,21 @@ with sidebar, st.container(border=True, key="cloud-account"):
     st.subheader("Public IPv4 address")
     st.write(public_ipv4())
     st.subheader("Delta connection")
+    connection_status = st.empty()
+    delta_address = st.empty()
+    if configured_account and credentials is None:
+        if st.button("Recheck Delta connection"):
+            connection_check.clear()
+        connection_credentials = configured_account[0]
+        digest = sha256("\0".join(connection_credentials).encode()).hexdigest()
+        authenticated, problem, address = connection_check(digest, connection_credentials)
+        if authenticated:
+            connection_status.success("Connected to Delta India")
+        else:
+            connection_status.error(problem)
+            if address:
+                delta_address.code(address)
+                st.caption("Allowlist the IP reported by Delta for this API key.")
     if configured_live and not authorized:
         st.caption("Live controls locked")
         with st.form("unlock_live_controls", clear_on_submit=True, border=False):
@@ -155,8 +189,10 @@ with sidebar, st.container(border=True, key="cloud-account"):
                     st.session_state.live_account = (account_id, access_digest)
                     st.rerun()
                 st.error("Incorrect dashboard access code.")
+    elif credentials is None and configured_account:
+        st.caption("Add DASHBOARD_ACCESS_CODE in Streamlit Secrets to unlock live controls.")
     elif credentials is None:
-        st.caption("Not connected")
+        connection_status.caption("Not connected")
         with st.expander("Connect read-only account"), st.form("delta_account", clear_on_submit=True, border=False):
             key = st.text_input("Read-only Delta API key", type="password")
             secret = st.text_input("Delta API secret", type="password")
@@ -167,7 +203,6 @@ with sidebar, st.container(border=True, key="cloud-account"):
                 else:
                     st.warning("Enter both credentials.")
     else:
-        connection_status = st.empty()
         if st.button("Disconnect"):
             st.session_state.pop("delta_credentials", None)
             st.session_state.pop("live_account", None)
@@ -179,12 +214,19 @@ connected = False
 if credentials:
     try:
         positions = read_account("/v2/positions/margined", credentials)
-        orders = read_account("/v2/orders/history?page_size=50", credentials)
+    except DeltaConnectionError as error:
+        connection_status.error(str(error))
+        if error.address:
+            delta_address.code(error.address)
     except (OSError, ValueError, KeyError) as error:
         connection_status.error(str(error))
     else:
         connected = True
         connection_status.success("Connected to Delta India")
+        try:
+            orders = read_account("/v2/orders/history?page_size=50", credentials)
+        except (OSError, ValueError, KeyError):
+            orders = None
 
 with main, st.container(border=True, key="cloud-controls"):
     st.title("Delta Strategy Dashboard")
@@ -284,7 +326,9 @@ with main, st.container(border=True, key="cloud-controls"):
             st.caption("No open positions.")
 
     st.subheader("Recent activity")
-    if orders is None:
+    if orders is None and connected:
+        st.caption("Delta order history is unavailable.")
+    elif orders is None:
         st.caption("Connect to Delta to load order history.")
     elif orders:
         st.dataframe([activity_row(order) for order in orders], hide_index=True)
