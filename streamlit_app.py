@@ -77,8 +77,8 @@ class DeltaConnectionError(ValueError):
         self.address = address
 
 
-def read_account(path, credentials):
-    result = delta_request("GET", path, credentials=credentials)
+def read_account(path, credentials, *, timeout=10):
+    result = delta_request("GET", path, credentials=credentials, timeout=timeout)
     if result.get("success") is not True:
         details = result.get("error") or {}
         code = details.get("code", "unknown_error")
@@ -93,15 +93,30 @@ def read_account(path, credentials):
     return result["result"]
 
 
-@st.cache_data(ttl=10, show_spinner=False)
-def connection_check(credential_digest, _credentials):
+def connection_check(credentials):
     try:
-        read_account("/v2/positions/margined", _credentials)
+        read_account("/v2/positions/margined", credentials, timeout=1)
     except DeltaConnectionError as error:
         return False, str(error), error.address
     except (OSError, ValueError, KeyError):
         return False, "Could not reach or read the Delta API.", None
     return True, None, None
+
+
+@st.fragment(run_every="1s")
+def show_connection(credentials, refresh_controls):
+    connected, problem, address = connection_check(credentials)
+    previous = st.session_state.get("delta_connected")
+    st.session_state.delta_connected = connected
+    if connected:
+        st.success("Connected to Delta India")
+    else:
+        st.error(f"Disconnected. {problem}")
+        if address:
+            st.code(address)
+            st.caption("Allowlist the IP reported by Delta for this API key.")
+    if refresh_controls and previous is not None and previous != connected:
+        st.rerun()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -165,21 +180,12 @@ with sidebar, st.container(border=True, key="cloud-account"):
     st.subheader("Public IPv4 address")
     st.write(public_ipv4())
     st.subheader("Delta connection")
-    connection_status = st.empty()
-    delta_address = st.empty()
-    if configured_account and credentials is None:
-        if st.button("Recheck Delta connection"):
-            connection_check.clear()
-        connection_credentials = configured_account[0]
-        digest = sha256("\0".join(connection_credentials).encode()).hexdigest()
-        authenticated, problem, address = connection_check(digest, connection_credentials)
-        if authenticated:
-            connection_status.success("Connected to Delta India")
-        else:
-            connection_status.error(problem)
-            if address:
-                delta_address.code(address)
-                st.caption("Allowlist the IP reported by Delta for this API key.")
+    connection_credentials = credentials or (configured_account[0] if configured_account else None)
+    if connection_credentials:
+        show_connection(connection_credentials, authorized)
+    else:
+        st.session_state.pop("delta_connected", None)
+        st.caption("Disconnected")
     if configured_live and not authorized:
         st.caption("Live controls locked")
         with st.form("unlock_live_controls", clear_on_submit=True, border=False):
@@ -192,7 +198,6 @@ with sidebar, st.container(border=True, key="cloud-account"):
     elif credentials is None and configured_account:
         st.caption("Add DASHBOARD_ACCESS_CODE in Streamlit Secrets to unlock live controls.")
     elif credentials is None:
-        connection_status.caption("Not connected")
         with st.expander("Connect read-only account"), st.form("delta_account", clear_on_submit=True, border=False):
             key = st.text_input("Read-only Delta API key", type="password")
             secret = st.text_input("Delta API secret", type="password")
@@ -210,23 +215,16 @@ with sidebar, st.container(border=True, key="cloud-account"):
         st.button("Refresh account data")
 
 positions = orders = None
-connected = False
-if credentials:
+connected = st.session_state.get("delta_connected", False)
+if credentials and connected:
     try:
         positions = read_account("/v2/positions/margined", credentials)
-    except DeltaConnectionError as error:
-        connection_status.error(str(error))
-        if error.address:
-            delta_address.code(error.address)
-    except (OSError, ValueError, KeyError) as error:
-        connection_status.error(str(error))
-    else:
-        connected = True
-        connection_status.success("Connected to Delta India")
-        try:
-            orders = read_account("/v2/orders/history?page_size=50", credentials)
-        except (OSError, ValueError, KeyError):
-            orders = None
+    except (OSError, ValueError, KeyError):
+        pass
+    try:
+        orders = read_account("/v2/orders/history?page_size=50", credentials)
+    except (OSError, ValueError, KeyError):
+        pass
 
 with main, st.container(border=True, key="cloud-controls"):
     st.title("Delta Strategy Dashboard")
@@ -294,6 +292,9 @@ with main, st.container(border=True, key="cloud-controls"):
         confirm_col, cancel_col = st.columns(2)
         if confirm_col.button("Confirm live start"):
             try:
+                ready, problem, _ = connection_check(credentials)
+                if not ready:
+                    raise ValueError(problem)
                 engine.start(contracts, interval, order_lots)
             except (OSError, ValueError, KeyError, ArithmeticError) as error:
                 st.error(str(error))
@@ -305,7 +306,9 @@ with main, st.container(border=True, key="cloud-controls"):
             st.rerun()
 
     st.subheader("Open positions")
-    if positions is None:
+    if positions is None and credentials and connected:
+        st.caption("Delta positions are unavailable.")
+    elif positions is None:
         st.caption("Connect to Delta to load open positions.")
     else:
         position_rows = []
@@ -326,7 +329,7 @@ with main, st.container(border=True, key="cloud-controls"):
             st.caption("No open positions.")
 
     st.subheader("Recent activity")
-    if orders is None and connected:
+    if orders is None and credentials and connected:
         st.caption("Delta order history is unavailable.")
     elif orders is None:
         st.caption("Connect to Delta to load order history.")

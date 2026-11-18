@@ -67,7 +67,7 @@ class IPv4HTTPSHandler(HTTPSHandler):
 DELTA_OPENER = build_opener(ProxyHandler({}), IPv4HTTPSHandler())
 
 
-def delta_request(method, path, order=None, *, credentials=None):
+def delta_request(method, path, order=None, *, credentials=None, timeout=10):
     if credentials is None:
         values = {}
         for line in Path(__file__).with_name(".env").read_text(encoding="utf-8-sig").splitlines():
@@ -89,7 +89,7 @@ def delta_request(method, path, order=None, *, credentials=None):
                           "Content-Type": "application/json", "User-Agent": "DeltaDashboard/1.0",
                       })
     try:
-        with DELTA_OPENER.open(request, timeout=10) as response:
+        with DELTA_OPENER.open(request, timeout=timeout) as response:
             return json.load(response)
     except HTTPError as error:
         try:
