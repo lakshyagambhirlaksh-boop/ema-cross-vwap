@@ -1,108 +1,34 @@
 """Serve the local Delta India dashboard."""
 
-import hashlib
-import hmac
 import ipaddress
 import json
 import runpy
 import socket
 import sys
 import time
-from http.client import HTTPSConnection
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-from urllib.error import HTTPError, URLError
-from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
+from urllib.error import URLError
 from uuid import uuid4
 
 from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles, session_vwap
-from live_strategy import CONTRACTS, ORDER_REASONS, LiveStrategy, tradeable_product, valid_contract_symbol
+from delta_client import (
+    CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request,
+    public_delta, tradeable_product, valid_contract_symbol,
+)
+from live_strategy import LiveStrategy
 
 
 DASHBOARD = Path(__file__).with_suffix(".html")
-DELTA_URL = "https://api.india.delta.exchange"
 POSITIONS_PATH = "/api/positions"
 ACTIVITY_PATH = "/api/activity"
 POSITIONS_PORT = 8770
 DASHBOARD_PORT = 8768
 
 
-class IPv4Connection(HTTPSConnection):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._create_connection = self.connect_ipv4
-
-    @staticmethod
-    def connect_ipv4(address, timeout, source_address):
-        host, port = address
-        failure = OSError("Delta has no reachable IPv4 address.")
-        for _, _, _, _, endpoint in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
-            try:
-                return socket.create_connection(endpoint, timeout, source_address)
-            except OSError as error:
-                failure = error
-        raise failure
-
-
-class IPv4HTTPSHandler(HTTPSHandler):
-    def https_open(self, request):
-        return self.do_open(IPv4Connection, request)
-
-
-DELTA_OPENER = build_opener(ProxyHandler({}), IPv4HTTPSHandler())
-
-
-def delta_request(method, path, order=None, *, credentials=None):
-    if credentials is None:
-        values = {}
-        for line in DASHBOARD.with_name(".env").read_text(encoding="utf-8-sig").splitlines():
-            name, _, value = line.partition("=")
-            if name.strip() in {"DELTA_API_KEY", "DELTA_API_SECRET"}:
-                values[name.strip()] = value.strip().strip("'\"")
-        credentials = (values.get("DELTA_API_KEY"), values.get("DELTA_API_SECRET"))
-    key, secret = credentials
-    if not key or not secret:
-        raise ValueError("Delta API credentials are missing.")
-
-    payload = json.dumps(order, separators=(",", ":")) if order is not None else ""
-    timestamp = str(int(time.time()))
-    message = (method + timestamp + path + payload).encode()
-    signature = hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
-    request = Request(DELTA_URL + path, payload.encode() if order is not None else None,
-                      method=method, headers={
-                          "api-key": key, "timestamp": timestamp, "signature": signature,
-                          "Content-Type": "application/json", "User-Agent": "DeltaDashboard/1.0",
-                      })
-    try:
-        with DELTA_OPENER.open(request, timeout=10) as response:
-            return json.load(response)
-    except HTTPError as error:
-        try:
-            return json.load(error)
-        except ValueError:
-            return {"success": False, "error": {"code": f"HTTP {error.code}"}}
-
-
-def public_delta(path):
-    with DELTA_OPENER.open(DELTA_URL + path, timeout=5) as response:
-        data = json.load(response)
-    if data.get("success") is not True:
-        raise ValueError("Delta market data request failed.")
-    return data["result"]
-
-
 STRATEGY = LiveStrategy(delta_request, public_delta, DASHBOARD.with_name(".delta-positions.json"))
-
-
-def dated_futures():
-    products = public_delta("/v2/products?states=live&contract_types=futures&page_size=100")
-    return sorted({
-        product["symbol"] for product in products
-        if product.get("contract_type") == "futures" and product.get("state") == "live"
-        and valid_contract_symbol(product.get("symbol"))
-    })
 
 
 def order_payload(data):
@@ -325,28 +251,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(502, {"message": "Delta order history unavailable."}, origin)
             return
         self.send_json(200, {"activities": rows}, origin)
-
-
-def activity_row(order):
-    client_id = order.get("client_order_id") or ""
-    reason = next((label for prefix, label in ORDER_REASONS.items() if client_id.startswith(prefix)), None)
-    stop_type = order.get("stop_order_type")
-    if not reason:
-        reason = {
-            "stop_loss_order": "Stop-loss",
-            "take_profit_order": "Take-profit",
-            "liquidation_order": "Liquidation",
-        }.get(stop_type, "Exit reason unavailable" if order.get("reduce_only") else "Order reason unavailable")
-    cancellation = order.get("cancellation_reason")
-    if order.get("state") == "cancelled" and cancellation:
-        reason += " · Cancelled: " + cancellation.replace("_", " ")
-    return {
-        "time": order.get("updated_at") or order.get("created_at"),
-        "contract": order.get("product_symbol") or order.get("product_id"),
-        "side": order.get("side"), "state": order.get("state"),
-        "filled_lots": int(order["size"]) - int(order["unfilled_size"]),
-        "price": order.get("average_fill_price"), "reason": reason,
-    }
 
 
 class PositionsHandler(DashboardHandler):

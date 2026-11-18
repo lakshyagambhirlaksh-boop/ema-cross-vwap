@@ -1,7 +1,6 @@
 """Run the Delta strategy and reconcile its positions with the exchange."""
 
 import json
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
@@ -9,34 +8,8 @@ from threading import Event, Lock, Thread
 from urllib.parse import urlencode
 from uuid import uuid4
 
+from delta_client import tradeable_product
 from delta_strategy import RESOLUTIONS, entry_setup, exit_reason, fetch_candles
-
-
-CONTRACTS = frozenset("BTCUSD ETHUSD SOLUSD XRPUSD XAUTUSD DOGEUSD BNBUSD LTCUSD SLVONUSD OILUSD".split())
-
-
-def valid_contract_symbol(symbol):
-    return isinstance(symbol, str) and re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,79}", symbol) is not None
-
-
-def tradeable_product(public, symbol):
-    if not valid_contract_symbol(symbol):
-        raise ValueError("Invalid Delta contract symbol.")
-    product = public("/v2/products/" + symbol)
-    kind = product.get("contract_type")
-    allowed = kind == "futures" or (kind == "perpetual_futures" and symbol in CONTRACTS)
-    if not allowed or product.get("symbol") != symbol or product.get("state") != "live":
-        raise ValueError(f"{symbol} is outside the supported live Delta futures markets.")
-    return product
-
-
-ORDER_REASONS = {
-    "ema-entry-": "Confirmed 8 EMA / VWAP entry",
-    "ema-rsi-": "RSI exit",
-    "ema-five-": "EMA 5 missed on traded and mark candles",
-    "ema-reverse-": "Confirmed opposite setup",
-    "ema-protect-": "Protective bracket could not be confirmed",
-}
 
 
 def strategy_order_id(prefix):

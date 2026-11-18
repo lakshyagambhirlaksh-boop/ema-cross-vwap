@@ -30,7 +30,8 @@ The Streamlit app opens without credentials and can show open positions and rece
 
 ## Source files
 
-- `dashboard.py` serves the local dashboard and signs Delta API requests.
+- `dashboard.py` serves the local dashboard.
+- `delta_client.py` provides shared Delta API access and signs requests.
 - `dashboard.html` contains the dashboard.
 - `delta_strategy.py` evaluates candles and trade rules.
 - `live_strategy.py` places orders and tracks strategy positions.

@@ -4,7 +4,7 @@ from ipaddress import IPv4Address
 
 import streamlit as st
 
-from dashboard import CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request
+from delta_client import CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request
 from delta_strategy import RESOLUTIONS
 
 
