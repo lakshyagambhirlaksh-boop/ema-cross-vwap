@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import runpy
 import socket
 import sys
 import time
@@ -371,4 +372,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Existing Cloud deployments may still use this file as their entry point.
+    streamlit_runner = sys.modules.get("streamlit.runtime.scriptrunner")
+    if streamlit_runner is not None and streamlit_runner.get_script_run_ctx(suppress_warning=True):
+        runpy.run_path(str(Path(__file__).with_name("streamlit_app.py")), run_name="__main__")
+    else:
+        main()
