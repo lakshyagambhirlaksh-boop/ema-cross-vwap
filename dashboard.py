@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles, session_vwap
 from delta_client import (
-    CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request,
+    CONTRACTS, DELTA_OPENER, ORDER_REASONS, activity_row, dated_futures, delta_request,
     public_delta, tradeable_product, valid_contract_symbol,
 )
 from live_strategy import LiveStrategy
@@ -214,6 +214,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(page)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(page)
 
@@ -246,7 +247,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             orders = STRATEGY.call("GET", "/v2/orders/history?page_size=50")
-            rows = [activity_row(order) for order in orders]
+            strategy_prefixes = tuple(ORDER_REASONS)
+            rows = [
+                activity_row(order) for order in orders
+                if (order.get("client_order_id") or "").startswith(strategy_prefixes)
+            ]
         except (OSError, ValueError, KeyError, TypeError):
             self.send_json(502, {"message": "Delta order history unavailable."}, origin)
             return
