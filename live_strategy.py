@@ -45,14 +45,23 @@ class LiveStrategy:
         Thread(target=self.run, daemon=True, name="delta-strategy").start()
 
     def start(self, contracts, timeframe, lots):
-        products = {}
-        for symbol in contracts:
+        symbols = tuple(contracts)
+        if not symbols:
+            raise ValueError("Select at least one contract.")
+        with self.lock:
+            if self.enabled:
+                raise ValueError("Stop new entries before changing strategy settings.")
+
+        def check_product(symbol):
             product = tradeable_product(self.public, symbol)
             tick = Decimal(str(product["tick_size"]))
             if not tick.is_finite() or tick <= 0:
                 raise ValueError("Invalid Delta tick size for " + symbol)
-            products[symbol] = {"id": int(product["id"]), "tick": str(tick),
-                                "timeframe": timeframe, "lots": lots}
+            return symbol, {"id": int(product["id"]), "tick": str(tick),
+                            "timeframe": timeframe, "lots": lots}
+
+        with ThreadPoolExecutor(max_workers=min(5, len(symbols))) as pool:
+            products = dict(pool.map(check_product, symbols))
         with self.lock:
             if self.enabled:
                 raise ValueError("Stop new entries before changing strategy settings.")

@@ -346,6 +346,10 @@
       strategyRequestPending = true;
       strategyActionVersion++;
       start.disabled = stop.disabled = true;
+      const button = action === "start" ? start : stop;
+      const buttonLabel = button.textContent;
+      button.textContent = action === "start" ? "Starting…" : "Stopping…";
+      status.textContent = action === "start" ? "Checking selected contracts on Delta…" : "Stopping new entries…";
       try {
         const response = await fetch("/api/strategy/" + action, {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -366,6 +370,7 @@
       } catch (error) {
         status.textContent = "Could not " + action + " strategy. " + error.message;
       } finally {
+        button.textContent = buttonLabel;
         strategyRequestPending = false;
       }
     }
