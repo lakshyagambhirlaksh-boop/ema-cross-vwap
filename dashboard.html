@@ -78,7 +78,6 @@
     .contracts { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .45rem; }
     .contracts label, .all-contracts { display: flex; align-items: center; gap: .4rem; }
     .all-contracts { margin-bottom: .6rem; }
-    #timeframe-form[hidden] { display: none; }
     .positions-table { overflow-x: auto; }
     .positions-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
     .positions-table th, .positions-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #2d4055; }
@@ -89,9 +88,10 @@
   <main>
     <h1>Delta Strategy Dashboard</h1>
     <section>
-      <form id="timeframe-form" hidden>
+      <form id="timeframe-form">
         <label>Timeframe
-          <select id="timeframe" required>
+          <select id="timeframe" required disabled>
+            <option value="" hidden>Set at Start</option>
             <option>1 min</option>
             <option selected>3 min</option>
             <option>5 min</option>
@@ -101,7 +101,7 @@
             <option>1 hr</option>
           </select>
         </label>
-        <button type="submit">Submit timeframe</button>
+        <button type="submit" id="timeframe-submit" disabled>Submit timeframe</button>
       </form>
       <p id="timeframe-status" role="status">Checking strategy timeframe…</p>
     </section>
@@ -238,13 +238,14 @@
 
     const timeframeForm = document.querySelector("#timeframe-form");
     const timeframe = document.querySelector("#timeframe");
+    const timeframeSubmit = document.querySelector("#timeframe-submit");
     const timeframeStatus = document.querySelector("#timeframe-status");
     const timeframeStorageKey = "delta-strategy-timeframe";
     let selectedTimeframe = timeframe.value;
     let confirmedLiveTimeframe = null;
     try {
       const savedTimeframe = localStorage.getItem(timeframeStorageKey);
-      if ([...timeframe.options].some(option => option.value === savedTimeframe)) {
+      if (savedTimeframe && [...timeframe.options].some(option => option.value === savedTimeframe)) {
         selectedTimeframe = savedTimeframe;
         timeframe.value = selectedTimeframe;
       }
@@ -256,7 +257,7 @@
     }
     timeframeForm.addEventListener("submit", event => {
       event.preventDefault();
-      if (timeframeForm.hidden) return;
+      if (timeframe.disabled) return;
       selectedTimeframe = timeframe.value;
       showNextTimeframe();
       try {
@@ -303,13 +304,17 @@
     function showStrategyState(state) {
       start.disabled = state.running;
       stop.disabled = !state.running;
-      timeframeForm.hidden = state.running;
+      const wasLocked = timeframe.disabled;
+      timeframe.disabled = state.running;
+      timeframeSubmit.disabled = state.running;
       if (state.running) {
         const activeTimeframe = state.timeframe || confirmedLiveTimeframe;
+        timeframe.value = activeTimeframe || "";
         timeframeStatus.textContent = activeTimeframe ? "Live timeframe · " + activeTimeframe :
           "Timeframe locked to the setting confirmed at Start.";
       } else {
         confirmedLiveTimeframe = null;
+        if (wasLocked) timeframe.value = selectedTimeframe;
         showNextTimeframe();
       }
       status.textContent = (state.running ? "Running live" : "Entries stopped") +
