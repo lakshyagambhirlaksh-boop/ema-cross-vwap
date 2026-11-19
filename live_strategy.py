@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from delta_client import tradeable_product
-from delta_strategy import RESOLUTIONS, entry_setup, exit_reason, fetch_candles
+from delta_strategy import RESOLUTIONS, entry_setup, fetch_candles, rsi_exit
 
 
 logger = logging.getLogger(__name__)
@@ -170,10 +170,8 @@ class LiveStrategy:
             return
         seconds, _ = RESOLUTIONS[trade["timeframe"]]
         traded = fetch_candles(self.public, symbol, trade["timeframe"], now)
-        mark = fetch_candles(self.public, "MARK:" + symbol, trade["timeframe"], now)
-        why = exit_reason(traded, mark, seconds, now, size, trade["opened_at"])
-        if why:
-            reason = "ema-rsi-" if why == "RSI" else "ema-five-"
+        if rsi_exit(traded, seconds, now, size):
+            reason = "ema-rsi-"
             with self.lock:
                 self.last_candle[symbol] = (now // seconds - 1) * seconds
                 self.save_trade(symbol, {**trade, "closing": True, "close_reason": reason})

@@ -18,7 +18,7 @@ The engine starts with new entries disabled on a fresh install. Select contracts
 - An 8 EMA cross above or below session VWAP (OHLC4) creates a setup when the traded-price candle closes on the same side of VWAP. The next candle must close beyond the signal candle's high for a long or low for a short.
 - If the first confirmation closes inside the signal candle's body, the setup gets one additional candle to confirm against the original high or low.
 - A long stop uses the low of the most recent candle before the signal that closed below its own VWAP. A short stop uses the high of the most recent candle before the signal that closed above its own VWAP. If no prior candle qualifies, the trade is skipped. The target is four times the distance from the actual entry fill to that stop.
-- Running-candle RSI exits at 74 or higher for longs and 20 or lower for shorts. The EMA 5 exit occurs at candle close when both the traded-price and mark-price candles miss their respective EMA 5.
+- Running-candle RSI exits at 74 or higher for longs and 20 or lower for shorts.
 
 The Python engine uses Delta candle data. It builds 10-minute candles from consecutive 5-minute candles and uses UTC day boundaries for session VWAP. Exact indicator parity with Delta's chart and the live order lifecycle have yet to be verified. Strategy entry and exit reason labels are available for orders sent by versions that include reason tags.
 
@@ -36,7 +36,7 @@ DASHBOARD_ACCESS_CODE = "a_long_unique_random_access_code"
 
 Delta must allowlist the cloud server's outbound IPv4 for the live key. Unlock the dashboard, select contracts and lots, submit your timeframe, and confirm **Start strategy** to enable real orders. **Stop strategy** pauses entries and continues managing positions opened by that engine. Run only one strategy engine for the same account and contracts. If you change the credentials for the same API key, reboot the Streamlit app to refresh the cached trading connection.
 
-Streamlit Community Cloud can sleep or restart. While its process is down, the software RSI and EMA 5 exits cannot run. Delta's accepted stop-loss and target orders remain on the exchange. Cloud storage also does not guarantee that the position journal survives a redeploy. Use the local engine or an always-on host with persistent storage when continuous management is required.
+Streamlit Community Cloud can sleep or restart. While its process is down, software-managed exits cannot run. Delta's accepted stop-loss and target orders remain on the exchange. Cloud storage also does not guarantee that the position journal survives a redeploy. Use the local engine or an always-on host with persistent storage when continuous management is required.
 
 ## Deploy on a VPS
 

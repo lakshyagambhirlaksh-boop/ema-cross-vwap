@@ -129,21 +129,10 @@ def stop_before_signal(candles, vwap, signal_index, side):
     return None
 
 
-def exit_reason(traded, mark, seconds, now, position_size, opened_at=0):
-    live = traded and traded[-1].time <= now < traded[-1].time + seconds
-    current_rsi = rsi(traded) if live else None
-    if current_rsi is not None and (
+def rsi_exit(traded, seconds, now, position_size):
+    if not traded or not traded[-1].time <= now < traded[-1].time + seconds:
+        return False
+    current_rsi = rsi(traded)
+    return current_rsi is not None and (
         (position_size > 0 and current_rsi >= 74) or (position_size < 0 and current_rsi <= 20)
-    ):
-        return "RSI"
-    traded_closed = [candle for candle in traded if candle.time + seconds <= now]
-    mark_closed = [candle for candle in mark if candle.time + seconds <= now]
-    if not traded_closed or not mark_closed:
-        return None
-    trade, marked = traded_closed[-1], mark_closed[-1]
-    if trade.time != marked.time or now >= trade.time + 2 * seconds or trade.time + seconds <= opened_at:
-        return None
-    traded_ema, mark_ema = ema(traded_closed, 5)[-1], ema(mark_closed, 5)[-1]
-    if not (trade.low <= traded_ema <= trade.high) and not (marked.low <= mark_ema <= marked.high):
-        return "EMA 5"
-    return None
+    )
