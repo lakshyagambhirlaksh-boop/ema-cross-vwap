@@ -301,6 +301,7 @@
     contractsGrid.addEventListener("change", updateContractSelection);
     let strategyRequestPending = false;
     let strategyStatusPending = false;
+    let strategyActionVersion = 0;
     function showStrategyState(state) {
       start.disabled = state.running;
       stop.disabled = !state.running;
@@ -325,13 +326,16 @@
     async function refreshStrategyStatus() {
       if (strategyStatusPending || strategyRequestPending) return;
       strategyStatusPending = true;
+      const actionVersion = strategyActionVersion;
       try {
         const response = await fetch("/api/strategy", { cache: "no-store" });
         if (!response.ok) throw new Error();
         const state = await response.json();
-        if (!strategyRequestPending) showStrategyState(state);
+        if (!strategyRequestPending && actionVersion === strategyActionVersion) showStrategyState(state);
       } catch {
-        if (!strategyRequestPending) status.textContent = "Strategy status unavailable.";
+        if (!strategyRequestPending && actionVersion === strategyActionVersion) {
+          status.textContent = "Strategy status unavailable.";
+        }
       } finally {
         strategyStatusPending = false;
       }
@@ -339,6 +343,7 @@
     async function controlStrategy(action, settings = {}) {
       if (strategyRequestPending) return;
       strategyRequestPending = true;
+      strategyActionVersion++;
       start.disabled = stop.disabled = true;
       try {
         const response = await fetch("/api/strategy/" + action, {
@@ -346,6 +351,14 @@
           body: JSON.stringify(settings)
         });
         const state = await response.json();
+        if (action === "start" && response.status === 409 &&
+            state.message === "Stop new entries before changing strategy settings.") {
+          const current = await fetch("/api/strategy", { cache: "no-store" });
+          if (current.ok) {
+            showStrategyState(await current.json());
+            return;
+          }
+        }
         if (!response.ok) throw new Error(state.message);
         if (action === "start") confirmedLiveTimeframe = settings.timeframe;
         showStrategyState(state);
