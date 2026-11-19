@@ -112,9 +112,17 @@ def show_connection(credentials, refresh_controls):
         st.success("Connected to Delta India")
     else:
         st.error(f"Disconnected. {problem}")
+    st.subheader("IP allowlist status")
+    if connected:
+        st.caption("Allowed by Delta")
+    elif address or problem == "Delta rejected this server IP for the configured API key.":
+        st.caption("Rejected by Delta")
         if address:
             st.code(address)
             st.caption("Allowlist the IP reported by Delta for this API key.")
+    else:
+        st.caption("Unverified")
+    st.caption(f"Public IPv4 · {public_ipv4()}")
     if refresh_controls and previous is not None and previous != connected:
         st.rerun()
 
@@ -177,15 +185,16 @@ else:
 
 main, sidebar = st.columns([3.4, 1], gap="small")
 with sidebar, st.container(border=True, key="cloud-account"):
-    st.subheader("Public IPv4 address")
-    st.write(public_ipv4())
-    st.subheader("Delta connection")
+    st.subheader("Delta API connection")
     connection_credentials = credentials or (configured_account[0] if configured_account else None)
     if connection_credentials:
         show_connection(connection_credentials, authorized)
     else:
         st.session_state.pop("delta_connected", None)
         st.caption("Disconnected")
+        st.subheader("IP allowlist status")
+        st.caption("Unverified")
+        st.caption(f"Public IPv4 · {public_ipv4()}")
     if configured_live and not authorized:
         st.caption("Live controls locked")
         with st.form("unlock_live_controls", clear_on_submit=True, border=False):

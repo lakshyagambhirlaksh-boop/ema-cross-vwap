@@ -42,6 +42,8 @@
     .connection { margin-top: 1rem; }
     #delta-status[data-connected="true"] { color: #91e6af; }
     #delta-status[data-connected="false"] { color: #ffb4b4; }
+    #ip-status[data-allowed="true"] { color: #91e6af; }
+    #ip-status[data-allowed="false"] { color: #ffb4b4; }
     #public-ip { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
     @media (max-width: 700px) {
       .layout { grid-template-columns: minmax(0, 44rem); }
@@ -166,12 +168,13 @@
       </div>
     </section>
   </main>
-  <aside aria-labelledby="ip-heading">
-    <h2 id="ip-heading">Public IPv4 address</h2>
-    <output id="public-ip">Checking…</output>
+  <aside aria-labelledby="delta-heading">
+    <h2 id="delta-heading">Delta API connection</h2>
+    <div id="delta-status" role="status">Checking…</div>
     <div class="connection">
-      <h2>Delta connection</h2>
-      <div id="delta-status" role="status">Checking…</div>
+      <h2>IP allowlist status</h2>
+      <div id="ip-status" role="status">Checking…</div>
+      <div>Public IPv4 <output id="public-ip">Checking…</output></div>
     </div>
   </aside>
   </div>
@@ -194,6 +197,12 @@
     }
 
     const deltaStatus = document.querySelector("#delta-status");
+    const ipStatus = document.querySelector("#ip-status");
+    function showIpStatus(allowed) {
+      ipStatus.dataset.allowed = String(allowed);
+      ipStatus.textContent = allowed === true ? "Allowed by Delta" :
+        allowed === false ? "Rejected by Delta" : "Unverified";
+    }
     let deltaStatusPending = false;
     async function refreshDeltaStatus() {
       if (deltaStatusPending) return;
@@ -205,10 +214,13 @@
         deltaStatus.dataset.connected = String(result.connected);
         deltaStatus.textContent = result.connected ? "Connected" : "Not connected";
         deltaStatus.title = result.reason || "";
+        showIpStatus(result.connected ? true :
+          result.reason === "ip_not_whitelisted_for_api_key" ? false : null);
       } catch {
         deltaStatus.dataset.connected = "false";
         deltaStatus.textContent = "Not connected";
         deltaStatus.title = "Dashboard status request failed";
+        showIpStatus(null);
       } finally {
         deltaStatusPending = false;
       }
