@@ -11,7 +11,7 @@ Use Python 3.10 or later. The dashboard uses the Python standard library.
 3. Run `python dashboard.py` from the project folder.
 4. Open [the dashboard](http://127.0.0.1:8768/) in a browser or in the VS Code Integrated Browser.
 
-The engine starts with new entries disabled. Select contracts, submit a timeframe, and set lots per contract before using **Start strategy**. Confirming Start enables real order submissions when a setup qualifies. **Stop strategy** pauses new entries while the running process continues managing its tracked positions. Keep the Python process running for software-managed exits. Position tracking is stored locally in `.delta-positions.json`.
+The engine starts with new entries disabled on a fresh install. Select contracts, submit a timeframe, and set lots per contract before confirming **Start strategy**. The engine saves that choice and resumes scanning new candles after a service restart. **Stop strategy** saves the stopped state and pauses new entries while the engine continues managing tracked positions. Keep the Python process running for software-managed exits.
 
 ## Trading rules
 

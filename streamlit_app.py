@@ -259,9 +259,13 @@ with main, st.container(border=True, key="cloud-controls"):
         lots = st.number_input("Lots per contract", min_value=1, step=1, value=1)
         save_selection = st.button("Save contract selection")
     if stop_clicked and authorized:
-        engine.stop()
-        st.session_state.pop("confirm_live_start", None)
-        st.rerun()
+        try:
+            engine.stop()
+        except OSError:
+            st.error("New entries stopped, but Stop could not be saved for a restart.")
+        else:
+            st.session_state.pop("confirm_live_start", None)
+            st.rerun()
     if strategy_state:
         st.caption(f"{'Running live' if running else 'Entries stopped'} · {strategy_state['positions']} tracked position(s)")
         for symbol, error in strategy_state["errors"].items():

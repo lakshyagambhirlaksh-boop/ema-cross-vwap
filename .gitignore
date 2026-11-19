@@ -3,6 +3,8 @@
 !/.env.example
 /.delta-positions.json
 /.delta-positions.tmp
+/.delta-positions.run.json
+/.delta-positions.run.tmp
 /.delta-cloud-*.json
 /.delta-cloud-*.tmp
 /.streamlit/secrets.toml

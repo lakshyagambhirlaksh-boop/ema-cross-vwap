@@ -1,6 +1,7 @@
 """Run the Delta strategy and reconcile its positions with the exchange."""
 
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, ROUND_HALF_UP
@@ -12,6 +13,15 @@ from delta_client import tradeable_product
 from delta_strategy import RESOLUTIONS, entry_setup, exit_reason, fetch_candles
 
 
+logger = logging.getLogger(__name__)
+
+
+def write_state(path, state):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
+    temporary.replace(path)
+
+
 def strategy_order_id(prefix):
     return prefix + uuid4().hex[:32 - len(prefix)]
 
@@ -21,14 +31,15 @@ class LiveStrategy:
         self.private = private
         self.public = public
         self.journal = journal
+        self.run_config = journal.with_suffix(".run.json")
         self.lock = Lock()
         self.wake = Event()
-        self.enabled = False
-        self.settings = {}
+        self.settings = json.loads(self.run_config.read_text()) if self.run_config.exists() else {}
+        self.enabled = bool(self.settings)
         self.last_candle = {}
         self.errors = {}
         self.trades = json.loads(journal.read_text()) if journal.exists() else {}
-        self.started_at = 0
+        self.started_at = time.time() if self.enabled else 0
 
     def launch(self):
         Thread(target=self.run, daemon=True, name="delta-strategy").start()
@@ -45,6 +56,7 @@ class LiveStrategy:
         with self.lock:
             if self.enabled:
                 raise ValueError("Stop new entries before changing strategy settings.")
+            write_state(self.run_config, products)
             self.settings = products
             self.started_at = time.time()
             self.enabled = True
@@ -53,6 +65,7 @@ class LiveStrategy:
     def stop(self):
         with self.lock:
             self.enabled = False
+            write_state(self.run_config, {})
         self.wake.set()
 
     def status(self):
@@ -69,9 +82,7 @@ class LiveStrategy:
             updated.pop(symbol, None)
         else:
             updated[symbol] = trade
-        temporary = self.journal.with_suffix(".tmp")
-        temporary.write_text(json.dumps(updated), encoding="utf-8")
-        temporary.replace(self.journal)
+        write_state(self.journal, updated)
         self.trades = updated
 
     def call(self, method, path, body=None):
@@ -211,9 +222,10 @@ class LiveStrategy:
                 self.scan(symbol, settings, now)
         except (OSError, ValueError, KeyError, TypeError, ArithmeticError) as error:
             with self.lock:
-                self.errors[symbol] = str(error)
-                if symbol in self.trades:
-                    self.enabled = False
+                message = str(error)
+                if self.errors.get(symbol) != message:
+                    logger.warning("Delta strategy %s: %s", symbol, message)
+                self.errors[symbol] = message
         else:
             with self.lock:
                 self.errors.pop(symbol, None)

@@ -51,7 +51,7 @@ Leave the SSH terminal open and visit [the VPS dashboard through the tunnel](htt
 
 If your VPS also runs the read-only `delta-history.service` while the main trading process awaits a scheduled restart, add `-L 127.0.0.1:18769:127.0.0.1:18769` to the SSH command to load the updated history without interrupting trading.
 
-The strategy starts with entries stopped. Before starting this engine, pause any other copy running on the same Delta account and contracts. Wait for positions tracked by that copy to close, or manage them there until they close. Select contracts, submit the timeframe, set lots, and confirm **Start strategy** when you are ready to allow real orders.
+The strategy starts with entries stopped on a fresh install. Before starting this engine, pause any other copy running on the same Delta account and contracts. Wait for positions tracked by that copy to close, or manage them there until they close. Select contracts, submit the timeframe, set lots, and confirm **Start strategy** when you are ready to allow real orders.
 
 ## Update and inspect a Docker deployment
 
@@ -62,4 +62,4 @@ docker compose ps
 docker compose logs --tail=100 dashboard
 ```
 
-The named volume `strategy-state` retains the local position journal when the container is recreated. Keep this volume for restart recovery. After a restart, the dashboard continues managing positions from its journal with new entries stopped until you confirm Start again. **Stop strategy** pauses new entries while the container keeps managing tracked positions. Stopping the container also stops the software-managed exits.
+The named volume `strategy-state` retains the position journal and the Start/Stop choice when the container is recreated. Keep this volume for restart recovery. A started strategy resumes on new candles after a restart. **Stop strategy** persists across restarts and pauses new entries while the container keeps managing tracked positions. Stopping the container also stops the software-managed exits.

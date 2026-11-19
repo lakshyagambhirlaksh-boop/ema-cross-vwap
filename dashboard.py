@@ -58,7 +58,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
             return
         if self.path == "/api/strategy/stop":
-            STRATEGY.stop()
+            try:
+                STRATEGY.stop()
+            except OSError:
+                self.send_json(503, {"message": "New entries stopped, but Stop could not be saved for a restart."})
+                return
             self.send_json(200, STRATEGY.status())
             return
         try:
