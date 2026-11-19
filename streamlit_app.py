@@ -264,6 +264,9 @@ with main, st.container(border=True, key="cloud-controls"):
 
     st.subheader("Strategy contracts")
     symbols = available_contracts()
+    st.session_state.setdefault("select_all_contracts", True)
+    for symbol in symbols:
+        st.session_state.setdefault(f"contract_{symbol}", st.session_state.select_all_contracts)
     st.checkbox("Select all", key="select_all_contracts", on_change=select_all_contracts, args=(symbols,))
     contract_columns = st.columns(5)
     selected = []
