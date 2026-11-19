@@ -9,6 +9,7 @@ from threading import Event, Lock, Thread
 from urllib.parse import urlencode
 from uuid import uuid4
 
+from chart_vwap import ChartVwap
 from delta_client import tradeable_product
 from delta_strategy import RESOLUTIONS, entry_setup, fetch_candles, rsi_exit
 
@@ -31,6 +32,7 @@ class LiveStrategy:
         self.private = private
         self.public = public
         self.journal = journal
+        self.chart_vwap = ChartVwap(journal.with_suffix(".vwap.json"))
         self.run_config = journal.with_suffix(".run.json")
         self.lock = Lock()
         self.wake = Event()
@@ -186,7 +188,10 @@ class LiveStrategy:
                 return
             if closed[-1].time + seconds <= max(started, trade["opened_at"]):
                 return
-            signal = entry_setup(closed, seconds)
+            values = self.chart_vwap.series(symbol, trade["timeframe"], closed)
+            if len(values) < 4 or any(value is None for value in values[-4:]):
+                return
+            signal = entry_setup(closed, seconds, values)
             if signal and signal[0] != trade["side"]:
                 with self.lock:
                     self.save_trade(symbol, {**trade, "closing": True, "close_reason": "ema-reverse-"})
@@ -203,7 +208,10 @@ class LiveStrategy:
         closed = [candle for candle in traded if candle.time + seconds <= now]
         if not closed or closed[-1].time != expected:
             return
-        signal = entry_setup(closed, seconds)
+        values = self.chart_vwap.series(symbol, settings["timeframe"], closed)
+        if len(values) < 4 or any(value is None for value in values[-4:]):
+            raise ValueError("Waiting for timestamped Delta chart VWAP.")
+        signal = entry_setup(closed, seconds, values)
         with self.lock:
             self.last_candle[symbol] = expected
         if not signal or int(self.position(settings["id"])["size"]):

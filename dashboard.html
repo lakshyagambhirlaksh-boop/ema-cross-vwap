@@ -489,7 +489,7 @@
             const values = [
               item.contract,
               item.ema8 == null ? "—" : indicatorPrice.format(item.ema8),
-              item.vwap == null ? "—" : indicatorPrice.format(item.vwap),
+              item.vwap == null ? "Waiting for Delta chart" : indicatorPrice.format(item.vwap),
               item.candle_time == null ? "—" : indicatorTime.format(new Date(item.candle_time * 1000))
             ];
             for (const value of values) row.insertCell().textContent = value;
@@ -498,7 +498,7 @@
           indicatorsRows.replaceChildren(rows);
           lastIndicators = signature;
         }
-        indicatorsStatus.textContent = data.timeframe + " · Latest closed Delta candle";
+        indicatorsStatus.textContent = data.timeframe + " · Latest closed candle · VWAP from Delta chart readings";
       } catch {
         indicatorsStatus.textContent = "Could not refresh indicator values.";
       } finally {

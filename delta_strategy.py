@@ -71,23 +71,10 @@ def rsi(candles, length=14):
     return 100 - 100 / (1 + gains / losses) if losses else 100
 
 
-def session_vwap(candles):
-    values = []
-    session = None
-    for candle in candles:
-        day = candle.time // 86400
-        if day != session:
-            session, value, volume = day, 0.0, 0.0
-        value += (candle.open + candle.high + candle.low + candle.close) / 4 * candle.volume
-        volume += candle.volume
-        values.append(value / volume if volume else None)
-    return values
-
-
-def entry_setup(candles, seconds):
+def entry_setup(candles, seconds, vwap):
     if len(candles) < 4:
         return None
-    average, vwap = ema(candles, 8), session_vwap(candles)
+    average = ema(candles, 8)
     final = len(candles) - 1
     matches = {}
     for index in (final - 1, final - 2):
@@ -121,7 +108,7 @@ def stop_before_signal(candles, vwap, signal_index, side):
     for index in range(signal_index - 1, -1, -1):
         candle, level = candles[index], vwap[index]
         if level is None:
-            continue
+            return None
         if side == "buy" and candle.close < level:
             return candle.low
         if side == "sell" and candle.close > level:
