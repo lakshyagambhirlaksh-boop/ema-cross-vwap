@@ -18,7 +18,7 @@ from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 DELTA_URL = "https://api.india.delta.exchange"
 
 
-CONTRACTS = frozenset("BTCUSD ETHUSD SOLUSD XRPUSD XAUTUSD DOGEUSD BNBUSD LTCUSD SLVONUSD OILUSD".split())
+CONTRACTS = frozenset("BTCUSD ETHUSD SOLUSD XRPUSD XAUTUSD DOGEUSD SNDKBUSD LTCUSD SLVONUSD OILUSD".split())
 
 
 def valid_contract_symbol(symbol):

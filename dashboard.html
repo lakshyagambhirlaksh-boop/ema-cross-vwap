@@ -133,7 +133,7 @@
             <label><input type="checkbox" name="contract" value="XRPUSD" checked> XRPUSD</label>
             <label><input type="checkbox" name="contract" value="XAUTUSD" checked> XAUTUSD</label>
             <label><input type="checkbox" name="contract" value="DOGEUSD" checked> DOGEUSD</label>
-            <label><input type="checkbox" name="contract" value="BNBUSD" checked> BNBUSD</label>
+            <label><input type="checkbox" name="contract" value="SNDKBUSD" checked> SNDKBUSD</label>
             <label><input type="checkbox" name="contract" value="LTCUSD" checked> LTCUSD</label>
             <label><input type="checkbox" name="contract" value="SLVONUSD" checked> SLVONUSD</label>
             <label><input type="checkbox" name="contract" value="OILUSD" checked> OILUSD</label>
@@ -399,7 +399,7 @@
     try {
       const saved = JSON.parse(localStorage.getItem(contractSettingsKey) || "null");
       if (saved && Array.isArray(saved.contracts)) {
-        savedContracts = saved.contracts;
+        savedContracts = [...new Set(saved.contracts.map(symbol => symbol === "BNBUSD" ? "SNDKBUSD" : symbol))];
         for (const input of contractInputs) input.checked = savedContracts.includes(input.value);
         updateContractSelection();
         if (Number.isSafeInteger(saved.lots) && saved.lots > 0) {

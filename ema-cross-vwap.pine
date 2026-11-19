@@ -6,7 +6,7 @@ bool ignoreSessionOpen = input.bool(true, "Ignore crosses on the first bar of ea
 
 var array<string> supportedContracts = array.from(
      "BTCUSD.P", "ETHUSD.P", "SOLUSD.P", "XRPUSD.P", "XAUTUSD.P",
-     "DOGEUSD.P", "BNBUSD.P", "LTCUSD.P", "SLVONUSD.P", "OILUSD.P")
+     "DOGEUSD.P", "SNDKBUSD.P", "LTCUSD.P", "SLVONUSD.P", "OILUSD.P")
 
 bool datedFuture = syminfo.type == "futures" and not str.contains(syminfo.ticker, "!") and not str.endswith(syminfo.ticker, ".P")
 if syminfo.prefix != "DELTAIN" or not (array.includes(supportedContracts, syminfo.ticker) or datedFuture)
