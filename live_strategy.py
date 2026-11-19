@@ -57,8 +57,10 @@ class LiveStrategy:
 
     def status(self):
         with self.lock:
+            settings = next(iter(self.settings.values()), {})
             return {"running": self.enabled, "positions": len(self.trades),
-                    "errors": dict(self.errors)}
+                    "errors": dict(self.errors),
+                    "timeframe": settings.get("timeframe") if self.enabled else None}
 
     def save_trade(self, symbol, trade):
         # Called with the lock held. Persist before sending an entry.

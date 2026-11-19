@@ -102,7 +102,7 @@
         </label>
         <button type="submit">Submit timeframe</button>
       </form>
-      <p id="timeframe-status" role="status">Selected timeframe · 3 min</p>
+      <p id="timeframe-status" role="status">Timeframe for next Start · 3 min</p>
     </section>
     <section>
       <h2>Strategy controls</h2>
@@ -238,12 +238,31 @@
     const timeframeForm = document.querySelector("#timeframe-form");
     const timeframe = document.querySelector("#timeframe");
     const timeframeStatus = document.querySelector("#timeframe-status");
+    const timeframeStorageKey = "delta-strategy-timeframe";
     let selectedTimeframe = "3 min";
+    try {
+      const savedTimeframe = localStorage.getItem(timeframeStorageKey);
+      if ([...timeframe.options].some(option => option.value === savedTimeframe)) {
+        selectedTimeframe = savedTimeframe;
+        timeframe.value = selectedTimeframe;
+      }
+    } catch {
+      // The timeframe can still be selected for this page.
+    }
+    function showNextTimeframe() {
+      timeframeStatus.textContent = "Timeframe for next Start · " + selectedTimeframe;
+    }
+    showNextTimeframe();
 
     timeframeForm.addEventListener("submit", event => {
       event.preventDefault();
       selectedTimeframe = timeframe.value;
-      timeframeStatus.textContent = "Selected timeframe · " + selectedTimeframe;
+      showNextTimeframe();
+      try {
+        localStorage.setItem(timeframeStorageKey, selectedTimeframe);
+      } catch {
+        // The current page still uses the submitted timeframe.
+      }
     });
 
     const start = document.querySelector("#start");
@@ -285,6 +304,10 @@
       stop.disabled = !state.running;
       status.textContent = (state.running ? "Running live" : "Entries stopped") +
         " · " + state.positions + " tracked position(s)";
+      if (state.running) {
+        status.textContent += state.timeframe ? " · Live timeframe " + state.timeframe :
+          " · Uses the timeframe confirmed at Start";
+      }
       const errors = Object.entries(state.errors);
       if (errors.length) status.textContent += " · " + errors.map(([symbol, error]) => symbol + " " + error).join(" · ");
     }
