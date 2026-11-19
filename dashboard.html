@@ -457,7 +457,8 @@
         const data = await response.json();
         const activities = data.activities.filter(activity =>
           Number(activity.filled_lots) > 0 &&
-          strategyReasons.has((activity.reason || "").split(" · Cancelled:")[0]));
+          (activity.strategy_verified === true ||
+            strategyReasons.has((activity.reason || "").split(" · Cancelled:")[0])));
         const snapshot = JSON.stringify(activities);
         if (snapshot !== lastActivity) {
           const rows = document.createDocumentFragment();

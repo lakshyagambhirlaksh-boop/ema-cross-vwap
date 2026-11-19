@@ -7,6 +7,8 @@ import os
 import re
 import socket
 import time
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.error import HTTPError
@@ -139,3 +141,76 @@ def activity_row(order):
         "filled_lots": int(order["size"]) - int(order["unfilled_size"]),
         "price": order.get("average_fill_price"), "reason": reason,
     }
+
+
+def strategy_activity(orders):
+    """Return fills attributable to tagged entries or their Delta brackets."""
+    prefixes = tuple(ORDER_REASONS)
+    entries = [
+        order for order in orders
+        if (order.get("client_order_id") or "").startswith("ema-entry-") and filled_lots(order)
+    ]
+    brackets = [
+        order for order in orders
+        if order.get("bracket_order") is True and order.get("reduce_only") is True
+        and order.get("stop_order_type") in ("stop_loss_order", "take_profit_order")
+    ]
+    verified_brackets = set()
+    for entry in entries:
+        candidates = [order for order in brackets if bracket_matches_entry(order, entry)]
+        stops = [order for order in candidates if order["stop_order_type"] == "stop_loss_order"]
+        targets = [order for order in candidates if order["stop_order_type"] == "take_profit_order"]
+        pairs = [(stop, target) for stop in stops for target in targets
+                 if bracket_matches_target(stop, target, entry)]
+        if len(pairs) == 1:
+            verified_brackets.update(order["id"] for order in pairs[0])
+
+    rows = []
+    for order in orders:
+        tagged = (order.get("client_order_id") or "").startswith(prefixes)
+        if filled_lots(order) and (tagged or order.get("id") in verified_brackets):
+            rows.append({**activity_row(order), "strategy_verified": True})
+    return rows
+
+
+def filled_lots(order):
+    return int(order["size"]) - int(order["unfilled_size"]) > 0
+
+
+def order_time(order, field):
+    return datetime.fromisoformat(order[field].replace("Z", "+00:00"))
+
+
+def api_origin(order):
+    meta = order.get("meta_data") or {}
+    return meta.get("ip") if meta.get("source") == "api" else None
+
+
+def bracket_matches_entry(order, entry):
+    origin = api_origin(entry)
+    if (not origin or origin != api_origin(order) or order.get("product_id") != entry.get("product_id")
+            or order.get("side") == entry.get("side")
+            or int(order["size"]) != int(entry["size"]) - int(entry["unfilled_size"])):
+        return False
+    try:
+        delay = (order_time(order, "created_at") - order_time(entry, "updated_at")).total_seconds()
+        match_price = (order.get("meta_data") or {}).get("entry_price")
+        return 0 <= delay <= 30 and (
+            match_price is None or Decimal(match_price) == Decimal(entry["average_fill_price"])
+        )
+    except (KeyError, ValueError, TypeError, InvalidOperation):
+        return False
+
+
+def bracket_matches_target(stop, target, entry):
+    try:
+        creation_gap = abs((order_time(stop, "created_at") - order_time(target, "created_at")).total_seconds())
+        price = Decimal(entry["average_fill_price"])
+        stop_price = Decimal(stop["stop_price"])
+        target_price = Decimal(target["stop_price"])
+        risk = price - stop_price
+        tolerance = Decimal(1).scaleb(target_price.as_tuple().exponent) / 2
+        return (creation_gap <= 1 and (risk > 0 if entry["side"] == "buy" else risk < 0)
+                and abs(target_price - (price + 4 * risk)) <= tolerance)
+    except (KeyError, ValueError, TypeError, InvalidOperation):
+        return False
