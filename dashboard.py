@@ -251,6 +251,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             rows = [
                 activity_row(order) for order in orders
                 if (order.get("client_order_id") or "").startswith(strategy_prefixes)
+                and int(order["size"]) > int(order["unfilled_size"])
             ]
         except (OSError, ValueError, KeyError, TypeError):
             self.send_json(502, {"message": "Delta order history unavailable."}, origin)

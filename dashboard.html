@@ -152,8 +152,8 @@
       </div>
     </section>
     <section aria-labelledby="activity-heading">
-      <h2 id="activity-heading">Recent strategy activity</h2>
-      <p id="activity-status" role="status">Checking strategy orders on Delta…</p>
+      <h2 id="activity-heading">Recent strategy trades</h2>
+      <p id="activity-status" role="status">Checking strategy fills on Delta…</p>
       <div id="activity-table" class="positions-table" hidden>
         <table aria-labelledby="activity-heading">
           <thead><tr>
@@ -444,13 +444,14 @@
         if (!response.ok) throw new Error();
         const data = await response.json();
         const activities = data.activities.filter(activity =>
+          Number(activity.filled_lots) > 0 &&
           strategyReasons.has((activity.reason || "").split(" · Cancelled:")[0]));
         const snapshot = JSON.stringify(activities);
         if (snapshot !== lastActivity) {
           const rows = document.createDocumentFragment();
           for (const activity of activities) {
             const row = document.createElement("tr");
-            const state = activity.state === "closed" ? "Filled" : activity.state;
+            const state = activity.state === "closed" ? "Filled" : "Partially filled";
             for (const value of [activityTime(activity.time), activity.contract, activity.side, state,
               activity.filled_lots, activity.price, activity.reason]) {
               row.insertCell().textContent = value ?? "—";
@@ -461,7 +462,7 @@
           lastActivity = snapshot;
         }
         activityTable.hidden = activities.length === 0;
-        activityStatus.textContent = activities.length ? "" : "No recent strategy-tagged orders on Delta.";
+        activityStatus.textContent = activities.length ? "" : "No recent trades filled by this strategy.";
       } catch {
         activityStatus.textContent = activityTable.hidden
           ? "Delta order history unavailable."

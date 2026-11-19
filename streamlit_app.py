@@ -328,7 +328,7 @@ with main, st.container(border=True, key="cloud-controls"):
         else:
             st.caption("No open positions.")
 
-    st.subheader("Recent strategy activity")
+    st.subheader("Recent strategy trades")
     if orders is None and credentials and connected:
         st.caption("Delta order history is unavailable.")
     elif orders is None:
@@ -337,8 +337,9 @@ with main, st.container(border=True, key="cloud-controls"):
         strategy_orders = [
             activity_row(order) for order in orders
             if (order.get("client_order_id") or "").startswith(tuple(ORDER_REASONS))
+            and int(order["size"]) > int(order["unfilled_size"])
         ]
         if strategy_orders:
             st.dataframe(strategy_orders, hide_index=True)
         else:
-            st.caption("No recent strategy-tagged orders on Delta.")
+            st.caption("No recent trades filled by this strategy.")
