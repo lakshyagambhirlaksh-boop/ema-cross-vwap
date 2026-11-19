@@ -14,6 +14,15 @@ from delta_strategy import RESOLUTIONS, entry_setup, fetch_candles, rsi_exit
 
 
 logger = logging.getLogger(__name__)
+MAKER_INTERVAL = 2
+MAKER_MAX_EDITS = 9
+MAKER_DEADLINE = 19
+
+
+class DeltaOrderError(ValueError):
+    def __init__(self, method, path, code):
+        super().__init__(f"Delta rejected {method} {path.split('?')[0]} ({code}).")
+        self.code = str(code)
 
 
 def write_state(path, state):
@@ -98,7 +107,7 @@ class LiveStrategy:
         response = self.private(method, path, body)
         if response.get("success") is not True:
             code = (response.get("error") or {}).get("code", "unknown_error")
-            raise ValueError(f"Delta rejected {method} {path.split('?')[0]} ({code}).")
+            raise DeltaOrderError(method, path, code)
         return response.get("result")
 
     def position(self, product_id):
@@ -114,6 +123,135 @@ class LiveStrategy:
     def exit(self, symbol, size, reason):
         self.order(symbol, "sell" if size > 0 else "buy", abs(size),
                    client_id=strategy_order_id(reason), reduce_only=True)
+
+    def maker_quote(self, symbol, side):
+        book = self.public("/v2/l2orderbook/" + symbol + "?depth=1")
+        if not book.get("buy") or not book.get("sell"):
+            raise ValueError("Delta order book has no bid or ask.")
+        bid, ask = (Decimal(str(book[key][0]["price"])) for key in ("buy", "sell"))
+        if not all(price.is_finite() for price in (bid, ask)) or not 0 < bid < ask:
+            raise ValueError("Delta did not return a usable bid and ask.")
+        return bid if side == "buy" else ask
+
+    def save_maker(self, symbol, trade, **changes):
+        updated = {**trade, "maker": {**trade["maker"], **changes}}
+        with self.lock:
+            self.save_trade(symbol, updated)
+        return updated
+
+    def submit_maker(self, symbol, trade, price):
+        try:
+            self.call("POST", "/v2/orders", {
+                "product_symbol": symbol, "side": trade["side"], "size": trade["lots"],
+                "order_type": "limit_order", "limit_price": format(price, "f"),
+                "time_in_force": "gtc", "post_only": True, "client_order_id": trade["client_id"],
+            })
+        except DeltaOrderError as error:
+            if "post_only" not in error.code:
+                if error.code.startswith("HTTP ") or error.code in (
+                    "unknown_error", "internal_server_error", "internal_error", "request_timeout"
+                ):
+                    raise
+                with self.lock:
+                    self.save_trade(symbol, None)
+                raise
+            self.save_maker(symbol, trade, rejected=True)
+
+    def maker_running(self, trade):
+        return self.enabled and self.started_at == trade["maker"]["run_started"]
+
+    def maker_price_is_safe(self, trade, price):
+        stop = Decimal(trade["stop"])
+        return price > stop if trade["side"] == "buy" else price < stop
+
+    def finish_maker(self, symbol, trade, filled, fallback):
+        final = {key: value for key, value in trade.items() if key != "maker"}
+        if filled:
+            # Cancel the remaining maker size before protecting a partial fill.
+            with self.lock:
+                self.save_trade(symbol, final)
+            self.manage(symbol, final, int(time.time()))
+            return
+        if fallback:
+            price = self.maker_quote(symbol, trade["side"])
+            if self.maker_price_is_safe(trade, price) and not int(self.position(trade["id"])["size"]):
+                final["client_id"] = strategy_order_id("ema-entry-")
+                with self.lock:
+                    if self.maker_running(trade):
+                        self.save_trade(symbol, final)
+                    else:
+                        self.save_trade(symbol, None)
+                        return
+                self.order(symbol, final["side"], final["lots"], client_id=final["client_id"])
+                self.manage(symbol, final, int(time.time()))
+                return
+        with self.lock:
+            self.save_trade(symbol, None)
+
+    def cancel_maker(self, symbol, trade, order, fallback):
+        trade = self.save_maker(symbol, trade, cancel_requested=True)
+        cancelled = self.call("DELETE", "/v2/orders", {"id": order["id"], "product_id": trade["id"]})
+        if cancelled and cancelled.get("state") in ("closed", "cancelled"):
+            filled = int(cancelled["size"]) - int(cancelled["unfilled_size"])
+            self.finish_maker(symbol, trade, filled, fallback and not filled)
+
+    def manage_maker(self, symbol, trade):
+        maker = trade["maker"]
+        now = time.time()
+        with self.lock:
+            allowed = self.maker_running(trade)
+        expired = now >= maker["deadline"]
+        if allowed and not expired and now < maker["next_check"]:
+            return
+
+        rejected = maker.get("rejected", False)
+        order = None if rejected else self.call("GET", "/v2/orders/client_order_id/" + trade["client_id"])
+        now = time.time()
+        expired = now >= maker["deadline"]
+        with self.lock:
+            allowed = self.maker_running(trade)
+        if order:
+            state = order["state"]
+            filled = int(order["size"]) - int(order["unfilled_size"])
+            if state not in ("closed", "cancelled"):
+                if not allowed or expired or filled:
+                    self.cancel_maker(symbol, trade, order, allowed and expired and not maker.get("no_fallback"))
+                    return
+            else:
+                rejected = "post_only" in (order.get("cancellation_reason") or "")
+                if filled or not allowed or (expired and maker.get("cancel_requested")) or not rejected:
+                    fallback = (allowed and expired and not filled and not maker.get("no_fallback")
+                                and (rejected or maker.get("cancel_requested")))
+                    self.finish_maker(symbol, trade, filled, fallback)
+                    return
+        if not allowed or expired:
+            self.finish_maker(symbol, trade, 0, allowed and expired and rejected)
+            return
+        if maker["checks"] >= MAKER_MAX_EDITS:
+            return
+
+        price = self.maker_quote(symbol, trade["side"])
+        now = time.time()
+        with self.lock:
+            allowed = self.maker_running(trade)
+        if not allowed or now >= maker["deadline"]:
+            return
+        if not self.maker_price_is_safe(trade, price):
+            if rejected:
+                self.finish_maker(symbol, trade, 0, False)
+            else:
+                trade = self.save_maker(symbol, trade, deadline=now, no_fallback=True)
+                self.cancel_maker(symbol, trade, order, False)
+            return
+        trade = self.save_maker(symbol, trade, checks=maker["checks"] + 1,
+                                next_check=now + MAKER_INTERVAL)
+        if rejected:
+            trade = {**trade, "client_id": strategy_order_id("ema-entry-")}
+            trade = self.save_maker(symbol, trade, rejected=False)
+            self.submit_maker(symbol, trade, price)
+        elif price != Decimal(str(order["limit_price"])):
+            self.call("PUT", "/v2/orders", {"id": order["id"], "product_id": trade["id"],
+                                           "limit_price": format(price, "f"), "post_only": True})
 
     def protect(self, symbol, trade, size, position):
         entry = Decimal(str(position["entry_price"]))
@@ -135,6 +273,9 @@ class LiveStrategy:
             self.save_trade(symbol, {**trade, "protected": True})
 
     def manage(self, symbol, trade, now):
+        if "maker" in trade:
+            self.manage_maker(symbol, trade)
+            return
         position = self.position(trade["id"])
         size = int(position["size"])
         if not size:
@@ -212,14 +353,18 @@ class LiveStrategy:
         last = traded[-1].close
         if (last <= stop if side == "buy" else last >= stop):
             return
+        price = self.maker_quote(symbol, side)
+        maker_start = time.time()
         trade = {**settings, "side": side, "stop": str(stop), "client_id": strategy_order_id("ema-entry-"),
-                 "opened_at": now}
+                 "opened_at": now, "maker": {"deadline": maker_start + MAKER_DEADLINE,
+                    "next_check": maker_start + MAKER_INTERVAL, "checks": 0, "run_started": started_at}}
+        if not self.maker_price_is_safe(trade, price):
+            return
         with self.lock:
             if not self.enabled or self.started_at != started_at:
                 return
             self.save_trade(symbol, trade)
-        self.order(symbol, side, settings["lots"], client_id=trade["client_id"])
-        self.manage(symbol, trade, int(time.time()))
+        self.submit_maker(symbol, trade, price)
 
     def process(self, symbol, settings, trade, now):
         try:
