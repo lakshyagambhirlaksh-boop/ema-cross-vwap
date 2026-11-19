@@ -7,9 +7,11 @@ import runpy
 import socket
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from urllib.parse import parse_qs, urlsplit
 from urllib.error import URLError
 from uuid import uuid4
@@ -31,6 +33,36 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8768"))
 
 STATE_DIR = Path(os.environ.get("DELTA_STATE_DIR", str(DASHBOARD.parent)))
 STRATEGY = LiveStrategy(delta_request, public_delta, STATE_DIR / ".delta-positions.json")
+INDICATOR_CACHE = {}
+INDICATOR_LOCK = Lock()
+
+
+def indicator_snapshot(timeframe):
+    seconds, _ = RESOLUTIONS[timeframe]
+    with INDICATOR_LOCK:
+        now = int(time.time())
+        cached = INDICATOR_CACHE.get(timeframe)
+        if cached and cached[0] > now:
+            return cached[1]
+
+        def read_contract(symbol):
+            try:
+                candles = fetch_candles(public_delta, symbol, timeframe, now)
+                closed = [candle for candle in candles if candle.time + seconds <= now]
+                if closed:
+                    return {"contract": symbol, "candle_time": closed[-1].time,
+                            "ema8": ema(closed, 8)[-1], "vwap": session_vwap(closed)[-1]}
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+            return {"contract": symbol, "candle_time": None, "ema8": None, "vwap": None}
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            rows = list(pool.map(read_contract, sorted(CONTRACTS)))
+        boundary = now // seconds * seconds
+        expires = boundary + seconds if all(row["candle_time"] == boundary - seconds for row in rows) else now + 5
+        snapshot = {"timeframe": timeframe, "rows": rows}
+        INDICATOR_CACHE[timeframe] = (expires, snapshot)
+        return snapshot
 
 
 def order_payload(data):
@@ -132,6 +164,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path == "/api/indicators":
+            requested = parse_qs(parsed.query).get("timeframe", ["3 min"])[0]
+            timeframe = STRATEGY.status()["timeframe"] or requested
+            if timeframe not in RESOLUTIONS:
+                self.send_json(400, {"message": "Invalid timeframe."})
+                return
+            self.send_json(200, indicator_snapshot(timeframe))
+            return
         if path == "/api/contracts":
             try:
                 futures = dated_futures()

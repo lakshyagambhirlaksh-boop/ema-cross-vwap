@@ -141,6 +141,19 @@
         </fieldset>
       </form>
     </section>
+    <section aria-labelledby="indicators-heading">
+      <h2 id="indicators-heading">Strategy EMA and VWAP</h2>
+      <p id="indicators-status" role="status">Loading indicator values…</p>
+      <div class="positions-table">
+        <table aria-labelledby="indicators-heading">
+          <thead><tr>
+            <th scope="col">Contract</th><th scope="col">8 EMA</th><th scope="col">VWAP</th>
+            <th scope="col">Closed candle open time (IST)</th>
+          </tr></thead>
+          <tbody id="indicators-rows"></tbody>
+        </table>
+      </div>
+    </section>
     <section aria-labelledby="positions-heading">
       <h2 id="positions-heading">Open positions</h2>
       <p id="positions-status" role="status">Checking Delta positions…</p>
@@ -232,6 +245,7 @@
       refreshPublicIp();
       refreshDeltaStatus();
       refreshMarketData();
+      refreshIndicators();
       refreshPositions();
       refreshActivity();
     }
@@ -451,6 +465,47 @@
         contractStatus.textContent = "Could not save the selection in this browser.";
       }
     });
+    const indicatorsStatus = document.querySelector("#indicators-status");
+    const indicatorsRows = document.querySelector("#indicators-rows");
+    const indicatorPrice = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    const indicatorTime = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
+    });
+    let indicatorsPending = false;
+    let lastIndicators = "";
+    async function refreshIndicators() {
+      if (indicatorsPending) return;
+      indicatorsPending = true;
+      try {
+        const search = new URLSearchParams({ timeframe: selectedTimeframe });
+        const response = await fetch("/api/indicators?" + search, { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        const signature = JSON.stringify(data);
+        if (signature !== lastIndicators) {
+          const rows = document.createDocumentFragment();
+          for (const item of data.rows) {
+            const row = document.createElement("tr");
+            const values = [
+              item.contract,
+              item.ema8 == null ? "—" : indicatorPrice.format(item.ema8),
+              item.vwap == null ? "—" : indicatorPrice.format(item.vwap),
+              item.candle_time == null ? "—" : indicatorTime.format(new Date(item.candle_time * 1000))
+            ];
+            for (const value of values) row.insertCell().textContent = value;
+            rows.append(row);
+          }
+          indicatorsRows.replaceChildren(rows);
+          lastIndicators = signature;
+        }
+        indicatorsStatus.textContent = data.timeframe + " · Latest closed Delta candle";
+      } catch {
+        indicatorsStatus.textContent = "Could not refresh indicator values.";
+      } finally {
+        indicatorsPending = false;
+      }
+    }
+
     const positionsStatus = document.querySelector("#positions-status");
     const positionsTable = document.querySelector("#positions-table");
     const positionsRows = document.querySelector("#positions-rows");
