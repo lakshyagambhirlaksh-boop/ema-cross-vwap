@@ -1,10 +1,46 @@
 """Store VWAP values exported from the Delta chart, indexed by candle open time."""
 
+import csv
+import io
 import json
 import math
+from datetime import datetime
 from threading import Lock
 
 from delta_strategy import RESOLUTIONS
+
+
+def parse_chart_export(text):
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Paste Delta chart data with Time and VWAP columns.")
+    text = text.lstrip("\ufeff").strip()
+    delimiter = "\t" if "\t" in text.splitlines()[0] else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    headers = {name.strip().lower(): name for name in reader.fieldnames or []}
+    timestamp_column = headers.get("time") or headers.get("candle_time")
+    value_column = headers.get("vwap")
+    if not timestamp_column or not value_column:
+        raise ValueError("The header must contain Time (or candle_time) and VWAP.")
+    readings = []
+    for row in reader:
+        try:
+            stamp = row[timestamp_column].strip()
+            if stamp.isdecimal():
+                seconds = int(stamp)
+            else:
+                date = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                if date.utcoffset() is None or date.microsecond:
+                    raise ValueError
+                seconds = int(date.timestamp())
+            price = float(row[value_column].strip())
+        except (AttributeError, OverflowError, TypeError, ValueError):
+            raise ValueError(
+                f"Line {reader.line_num} needs Unix seconds or a date with timezone, and a numeric VWAP."
+            ) from None
+        readings.append({"candle_time": seconds, "vwap": price})
+        if len(readings) > 2000:
+            raise ValueError("Import at most 2000 closed candles at a time.")
+    return readings
 
 
 class ChartVwap:

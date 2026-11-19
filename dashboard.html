@@ -78,6 +78,9 @@
     .contracts { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: .45rem; }
     .contracts label, .all-contracts { display: flex; align-items: center; gap: .4rem; }
     .all-contracts { margin-bottom: .6rem; }
+    .chart-import { margin-top: .75rem; }
+    .chart-import form { margin-top: .75rem; }
+    .chart-import textarea { min-height: 6rem; width: min(100%, 26rem); font: inherit; }
     .positions-table { overflow-x: auto; }
     .positions-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
     .positions-table th, .positions-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #2d4055; }
@@ -144,6 +147,18 @@
     <section aria-labelledby="indicators-heading">
       <h2 id="indicators-heading">Strategy EMA and VWAP</h2>
       <p id="indicators-status" role="status">Loading indicator values…</p>
+      <details class="chart-import">
+        <summary>Import Delta chart VWAP</summary>
+        <form id="chart-vwap-form">
+          <label>Contract <select id="chart-vwap-contract" required></select></label>
+          <label>Delta chart data
+            <textarea id="chart-vwap-data" required placeholder="Time,VWAP"></textarea>
+          </label>
+          <button type="submit" id="chart-vwap-submit" disabled>Import readings</button>
+        </form>
+        <p>Paste closed candles with Time and VWAP columns. Use Unix seconds or include the timezone in each timestamp.</p>
+        <p id="chart-vwap-status" role="status"></p>
+      </details>
       <div class="positions-table">
         <table aria-labelledby="indicators-heading">
           <thead><tr>
@@ -467,6 +482,40 @@
     });
     const indicatorsStatus = document.querySelector("#indicators-status");
     const indicatorsRows = document.querySelector("#indicators-rows");
+    const chartVwapForm = document.querySelector("#chart-vwap-form");
+    const chartVwapContract = document.querySelector("#chart-vwap-contract");
+    const chartVwapData = document.querySelector("#chart-vwap-data");
+    const chartVwapSubmit = document.querySelector("#chart-vwap-submit");
+    const chartVwapStatus = document.querySelector("#chart-vwap-status");
+    let chartVwapTimeframe = null;
+    let chartVwapPending = false;
+    for (const input of contractInputs) {
+      chartVwapContract.add(new Option(input.value, input.value));
+    }
+    chartVwapForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!chartVwapTimeframe || chartVwapPending) return;
+      chartVwapPending = true;
+      chartVwapSubmit.disabled = true;
+      try {
+        const response = await fetch("/api/chart-vwap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contract: chartVwapContract.value, timeframe: chartVwapTimeframe,
+            csv: chartVwapData.value })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message);
+        chartVwapStatus.textContent = "Imported " + result.received + " Delta chart reading(s).";
+        chartVwapData.value = "";
+        refreshIndicators();
+      } catch (error) {
+        chartVwapStatus.textContent = error.message || "Could not import chart readings.";
+      } finally {
+        chartVwapPending = false;
+        chartVwapSubmit.disabled = !chartVwapTimeframe;
+      }
+    });
     const indicatorPrice = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
     const indicatorTime = new Intl.DateTimeFormat("en-IN", {
       timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
@@ -481,6 +530,9 @@
         const response = await fetch("/api/indicators?" + search, { cache: "no-store" });
         if (!response.ok) throw new Error();
         const data = await response.json();
+        chartVwapTimeframe = data.timeframe;
+        chartVwapSubmit.textContent = "Import " + data.timeframe + " readings";
+        chartVwapSubmit.disabled = chartVwapPending;
         const signature = JSON.stringify(data);
         if (signature !== lastIndicators) {
           const rows = document.createDocumentFragment();
@@ -500,6 +552,8 @@
         }
         indicatorsStatus.textContent = data.timeframe + " · Latest closed candle · VWAP from Delta chart readings";
       } catch {
+        chartVwapTimeframe = null;
+        chartVwapSubmit.disabled = true;
         indicatorsStatus.textContent = "Could not refresh indicator values.";
       } finally {
         indicatorsPending = false;
