@@ -1,0 +1,25 @@
+[Unit]
+Description=Delta EMA VWAP strategy dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/delta-strategy
+ExecStart=/usr/bin/python3 /opt/delta-strategy/dashboard.py
+EnvironmentFile=-/etc/delta-strategy/credentials.env
+Environment=DASHBOARD_PORT=18768
+Environment=DELTA_STATE_DIR=/var/lib/delta-strategy
+Environment=PYTHONDONTWRITEBYTECODE=1
+DynamicUser=yes
+StateDirectory=delta-strategy
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
