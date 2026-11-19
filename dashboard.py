@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import os
 import runpy
 import socket
 import sys
@@ -25,10 +26,11 @@ DASHBOARD = Path(__file__).with_suffix(".html")
 POSITIONS_PATH = "/api/positions"
 ACTIVITY_PATH = "/api/activity"
 POSITIONS_PORT = 8770
-DASHBOARD_PORT = 8768
+DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8768"))
 
 
-STRATEGY = LiveStrategy(delta_request, public_delta, DASHBOARD.with_name(".delta-positions.json"))
+STATE_DIR = Path(os.environ.get("DELTA_STATE_DIR", str(DASHBOARD.parent)))
+STRATEGY = LiveStrategy(delta_request, public_delta, STATE_DIR / ".delta-positions.json")
 
 
 def order_payload(data):

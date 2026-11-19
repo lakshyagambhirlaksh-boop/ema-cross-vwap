@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import os
 import re
 import socket
 import time
@@ -69,12 +70,15 @@ DELTA_OPENER = build_opener(ProxyHandler({}), IPv4HTTPSHandler())
 
 def delta_request(method, path, order=None, *, credentials=None, timeout=10):
     if credentials is None:
-        values = {}
-        for line in Path(__file__).with_name(".env").read_text(encoding="utf-8-sig").splitlines():
-            name, _, value = line.partition("=")
-            if name.strip() in {"DELTA_API_KEY", "DELTA_API_SECRET"}:
-                values[name.strip()] = value.strip().strip("'\"")
-        credentials = (values.get("DELTA_API_KEY"), values.get("DELTA_API_SECRET"))
+        names = ("DELTA_API_KEY", "DELTA_API_SECRET")
+        credentials = tuple(os.environ.get(name) for name in names)
+        if credentials == (None, None):
+            values = {}
+            for line in Path(__file__).with_name(".env").read_text(encoding="utf-8-sig").splitlines():
+                name, _, value = line.partition("=")
+                if name.strip() in names:
+                    values[name.strip()] = value.strip().strip("'\"")
+            credentials = tuple(values.get(name) for name in names)
     key, secret = credentials
     if not key or not secret:
         raise ValueError("Delta API credentials are missing.")

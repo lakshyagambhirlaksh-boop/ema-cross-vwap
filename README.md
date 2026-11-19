@@ -38,6 +38,10 @@ Delta must allowlist the cloud server's outbound IPv4 for the live key. Unlock t
 
 Streamlit Community Cloud can sleep or restart. While its process is down, the software RSI and EMA 5 exits cannot run. Delta's accepted stop-loss and target orders remain on the exchange. Cloud storage also does not guarantee that the position journal survives a redeploy. Use the local engine or an always-on host with persistent storage when continuous management is required.
 
+## Deploy on a VPS
+
+See [VPS deployment](VPS.md) for the Docker Compose setup, private dashboard access over SSH, and persistent position tracking.
+
 ## Source files
 
 - `dashboard.py` serves the local dashboard.
