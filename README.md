@@ -28,8 +28,6 @@ Delta's public API supplies candles and volume. It has no documented feed for th
 
 No automatic chart-value sender is included. Without current readings, new entries and reversals wait. Exchange stop-loss and target orders remain in effect, and the bot continues checking the running-candle RSI exit.
 
-For a manual import, open **Import Delta chart VWAP** under the indicator table, choose the contract, and paste CSV or tab-separated data with `Time` and `VWAP` headers. Times must identify closed candles by their open timestamp, in Unix seconds or ISO 8601 with an explicit timezone. The dashboard imports rows using the timeframe shown on its indicator table.
-
 ## Deploy the Streamlit dashboard
 
 In Streamlit Community Cloud, select this GitHub repository, branch `main`, and main file path `streamlit_app.py`. Existing deployments using `dashboard.py` also open the Streamlit dashboard. For a local preview, run `python -m pip install -r requirements.txt` and `python -m streamlit run streamlit_app.py`.

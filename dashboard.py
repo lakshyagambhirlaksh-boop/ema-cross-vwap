@@ -16,7 +16,6 @@ from urllib.parse import parse_qs, urlsplit
 from urllib.error import URLError
 from uuid import uuid4
 
-from chart_vwap import parse_chart_export
 from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles
 from delta_client import (
     CONTRACTS, DELTA_OPENER, dated_futures, delta_request,
@@ -146,8 +145,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"message": "Invalid Delta contract or timeframe."})
             return
         try:
-            readings = parse_chart_export(data["csv"]) if "csv" in data else data.get("readings")
-            received = STRATEGY.chart_vwap.ingest(symbol, timeframe, readings, int(time.time()))
+            received = STRATEGY.chart_vwap.ingest(symbol, timeframe, data.get("readings"), int(time.time()))
         except (ValueError, OverflowError) as error:
             self.send_json(400, {"message": str(error)})
             return
