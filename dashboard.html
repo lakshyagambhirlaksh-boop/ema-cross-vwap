@@ -103,7 +103,7 @@
         </label>
         <button type="submit" id="timeframe-submit" disabled>Submit timeframe</button>
       </form>
-      <p id="timeframe-status" role="status">Checking strategy timeframe…</p>
+      <p id="timeframe-status" role="status">Timeframe for next Start · 3 min</p>
     </section>
     <section>
       <h2>Strategy controls</h2>
@@ -228,10 +228,10 @@
     }
 
     function refreshDashboard() {
+      refreshStrategyStatus();
       refreshPublicIp();
       refreshDeltaStatus();
       refreshMarketData();
-      refreshStrategyStatus();
       refreshPositions();
       refreshActivity();
     }
@@ -255,6 +255,7 @@
     function showNextTimeframe() {
       timeframeStatus.textContent = "Timeframe for next Start · " + selectedTimeframe;
     }
+    showNextTimeframe();
     timeframeForm.addEventListener("submit", event => {
       event.preventDefault();
       if (timeframe.disabled) return;
