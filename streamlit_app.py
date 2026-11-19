@@ -8,7 +8,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from delta_client import CONTRACTS, DELTA_OPENER, activity_row, dated_futures, delta_request, public_delta
+from delta_client import CONTRACTS, DELTA_OPENER, ORDER_REASONS, activity_row, dated_futures, delta_request, public_delta
 from delta_strategy import RESOLUTIONS
 from live_strategy import LiveStrategy
 
@@ -328,12 +328,17 @@ with main, st.container(border=True, key="cloud-controls"):
         else:
             st.caption("No open positions.")
 
-    st.subheader("Recent activity")
+    st.subheader("Recent strategy activity")
     if orders is None and credentials and connected:
         st.caption("Delta order history is unavailable.")
     elif orders is None:
         st.caption("Connect to Delta to load order history.")
-    elif orders:
-        st.dataframe([activity_row(order) for order in orders], hide_index=True)
     else:
-        st.caption("No recent orders.")
+        strategy_orders = [
+            activity_row(order) for order in orders
+            if (order.get("client_order_id") or "").startswith(tuple(ORDER_REASONS))
+        ]
+        if strategy_orders:
+            st.dataframe(strategy_orders, hide_index=True)
+        else:
+            st.caption("No recent strategy-tagged orders on Delta.")

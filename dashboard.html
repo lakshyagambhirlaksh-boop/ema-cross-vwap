@@ -152,8 +152,8 @@
       </div>
     </section>
     <section aria-labelledby="activity-heading">
-      <h2 id="activity-heading">Recent activity</h2>
-      <p id="activity-status" role="status">Checking Delta order history…</p>
+      <h2 id="activity-heading">Recent strategy activity</h2>
+      <p id="activity-status" role="status">Checking strategy orders on Delta…</p>
       <div id="activity-table" class="positions-table" hidden>
         <table aria-labelledby="activity-heading">
           <thead><tr>
@@ -415,6 +415,13 @@
     const activityStatus = document.querySelector("#activity-status");
     const activityTable = document.querySelector("#activity-table");
     const activityRows = document.querySelector("#activity-rows");
+    const strategyReasons = new Set([
+      "Confirmed 8 EMA / VWAP entry",
+      "RSI exit",
+      "EMA 5 missed on traded and mark candles",
+      "Confirmed opposite setup",
+      "Protective bracket could not be confirmed"
+    ]);
     let activityPending = false;
     let activityUrl = "/api/activity";
     let lastActivity = "";
@@ -435,7 +442,9 @@
           response = await fetch(activityUrl, { cache: "no-store" });
         }
         if (!response.ok) throw new Error();
-        const { activities } = await response.json();
+        const data = await response.json();
+        const activities = data.activities.filter(activity =>
+          strategyReasons.has((activity.reason || "").split(" · Cancelled:")[0]));
         const snapshot = JSON.stringify(activities);
         if (snapshot !== lastActivity) {
           const rows = document.createDocumentFragment();
@@ -452,7 +461,7 @@
           lastActivity = snapshot;
         }
         activityTable.hidden = activities.length === 0;
-        activityStatus.textContent = activities.length ? "" : "No recent orders.";
+        activityStatus.textContent = activities.length ? "" : "No recent strategy-tagged orders on Delta.";
       } catch {
         activityStatus.textContent = activityTable.hidden
           ? "Delta order history unavailable."
