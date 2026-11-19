@@ -391,13 +391,21 @@
     const contractSettingsKey = "delta-strategy-contracts";
     const quantity = document.querySelector("#quantity");
     let savedContracts = [];
+    function showSavedContracts(count, lots) {
+      const lotLabel = lots === 1 ? " lot" : " lots";
+      const contractLabel = count === 1 ? " contract selected." : " contracts selected.";
+      contractStatus.textContent = "Saved " + lots + lotLabel + " per contract · " + count + contractLabel;
+    }
     try {
       const saved = JSON.parse(localStorage.getItem(contractSettingsKey) || "null");
       if (saved && Array.isArray(saved.contracts)) {
         savedContracts = saved.contracts;
         for (const input of contractInputs) input.checked = savedContracts.includes(input.value);
         updateContractSelection();
-        if (Number.isSafeInteger(saved.lots) && saved.lots > 0) quantity.value = saved.lots;
+        if (Number.isSafeInteger(saved.lots) && saved.lots > 0) {
+          quantity.value = saved.lots;
+          showSavedContracts(savedContracts.length, saved.lots);
+        }
       }
     } catch {
       contractStatus.textContent = "Saved selection is unavailable.";
@@ -438,7 +446,7 @@
       if (!Number.isSafeInteger(lots) || lots < 1) return;
       try {
         localStorage.setItem(contractSettingsKey, JSON.stringify({ contracts, lots }));
-        contractStatus.textContent = "Saved " + contracts.length + " contract(s) in this browser.";
+        showSavedContracts(contracts.length, lots);
       } catch {
         contractStatus.textContent = "Could not save the selection in this browser.";
       }
