@@ -161,7 +161,8 @@
         <table aria-labelledby="positions-heading">
           <thead><tr>
             <th scope="col">Contract</th><th scope="col">Side</th><th scope="col">Entry price</th>
-            <th scope="col">Target price</th><th scope="col">Mark price</th><th scope="col">Unrealized P&amp;L</th>
+            <th scope="col">Stop-loss price</th><th scope="col">Target price</th>
+            <th scope="col">Mark price</th><th scope="col">Unrealized P&amp;L</th>
           </tr></thead>
           <tbody id="positions-rows"></tbody>
         </table>
@@ -522,7 +523,7 @@
         }
         if (!response.ok) throw new Error();
         let data = await response.json();
-        if (positionsUrl === "/api/positions" && location.port === "18768" && !data.includes_targets) {
+        if (positionsUrl === "/api/positions" && location.port === "18768" && !data.includes_stop_loss) {
           const readOnlyUrl = "http://127.0.0.1:18769/api/positions";
           try {
             const updated = await fetch(readOnlyUrl, { cache: "no-store" });
@@ -531,14 +532,15 @@
               positionsUrl = readOnlyUrl;
             }
           } catch {
-            // The main dashboard still supplies positions if the targets feed is down.
+            // The main dashboard still supplies positions if the protective-order feed is down.
           }
         }
         const { positions } = data;
         const rows = document.createDocumentFragment();
         for (const position of positions) {
           const row = document.createElement("tr");
-          for (const value of [position.contract, position.side, position.entry, position.target, position.mark, position.pnl]) {
+          for (const value of [position.contract, position.side, position.entry, position.stop_loss,
+            position.target, position.mark, position.pnl]) {
             row.insertCell().textContent = value ?? "—";
           }
           rows.append(row);

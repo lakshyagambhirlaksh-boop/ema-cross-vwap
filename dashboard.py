@@ -271,23 +271,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             positions = STRATEGY.call("GET", "/v2/positions/margined")
             open_positions = [position for position in positions if int(position["size"])]
-            target_prices = None
+            protective_prices = None
             if open_positions:
                 try:
                     orders = STRATEGY.call("GET", "/v2/orders?states=open,pending")
-                    target_prices = {}
+                    protective_prices = {}
                     for order in orders:
-                        if (order.get("stop_order_type") == "take_profit_order" and order.get("reduce_only")
+                        order_type = order.get("stop_order_type")
+                        if (order_type in ("stop_loss_order", "take_profit_order") and order.get("reduce_only")
                                 and order.get("state") in ("open", "pending") and order.get("stop_price")):
-                            key = (order["product_id"], order["side"])
-                            target_prices.setdefault(key, []).append(str(order["stop_price"]))
+                            key = (order["product_id"], order["side"], order_type)
+                            protective_prices.setdefault(key, []).append(str(order["stop_price"]))
                 except (OSError, ValueError, KeyError, TypeError):
-                    target_prices = None
+                    protective_prices = None
             rows = []
             for position in open_positions:
                 size = int(position["size"])
                 key = (position["product_id"], "sell" if size > 0 else "buy")
-                prices = target_prices.get(key, []) if target_prices is not None else []
+                stops = protective_prices.get((*key, "stop_loss_order"), []) if protective_prices is not None else []
+                targets = protective_prices.get((*key, "take_profit_order"), []) if protective_prices is not None else []
                 rows.append({
                     "contract": position.get("product_symbol") or str(position["product_id"]),
                     "side": "Long" if size > 0 else "Short",
@@ -295,13 +297,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "entry": position.get("entry_price"),
                     "mark": position.get("mark_price"),
                     "pnl": position.get("unrealized_pnl"),
-                    "target": ", ".join(dict.fromkeys(prices)) or
-                    ("No active target" if target_prices is not None else "Unavailable"),
+                    "stop_loss": ", ".join(dict.fromkeys(stops)) or
+                    ("No active stop" if protective_prices is not None else "Unavailable"),
+                    "target": ", ".join(dict.fromkeys(targets)) or
+                    ("No active target" if protective_prices is not None else "Unavailable"),
                 })
         except (OSError, ValueError, KeyError, TypeError):
             self.send_json(502, {"message": "Delta positions unavailable."}, origin)
             return
-        self.send_json(200, {"positions": rows, "includes_targets": True}, origin)
+        self.send_json(200, {"positions": rows, "includes_targets": True, "includes_stop_loss": True}, origin)
 
     def send_activity(self, origin=None):
         if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
