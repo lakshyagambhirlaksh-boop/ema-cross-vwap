@@ -77,8 +77,10 @@ bool firstLongConfirmation = canTrade and longSignal[1] and close > high[1]
 bool firstShortConfirmation = canTrade and shortSignal[1] and close < low[1]
 bool longConfirmed = firstLongConfirmation or (canTrade and waitForLong[1] and close > high[2])
 bool shortConfirmed = firstShortConfirmation or (canTrade and waitForShort[1] and close < low[2])
-float longStop = firstLongConfirmation ? low[2] : low[3]
-float shortStop = firstShortConfirmation ? high[2] : high[3]
+float lastLowBelowVwap = ta.valuewhen(close < vwap, low, 0)
+float lastHighAboveVwap = ta.valuewhen(close > vwap, high, 0)
+float longStop = firstLongConfirmation ? lastLowBelowVwap[2] : lastLowBelowVwap[3]
+float shortStop = firstShortConfirmation ? lastHighAboveVwap[2] : lastHighAboveVwap[3]
 
 if longConfirmed and not shortConfirmed and strategy.position_size <= 0 and not na(longStop)
     activeLongStop := longStop

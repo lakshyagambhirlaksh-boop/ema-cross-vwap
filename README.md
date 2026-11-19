@@ -17,7 +17,7 @@ The engine starts with new entries disabled. Select contracts, submit a timefram
 
 - An 8 EMA cross above or below session VWAP (OHLC4) creates a setup when the traded-price candle closes on the same side of VWAP. The next candle must close beyond the signal candle's high for a long or low for a short.
 - If the first confirmation closes inside the signal candle's body, the setup gets one additional candle to confirm against the original high or low.
-- The stop is the low of the candle before the signal for a long, or its high for a short. The target is four times the distance from the actual entry fill to that stop.
+- A long stop uses the low of the most recent candle before the signal that closed below its own VWAP. A short stop uses the high of the most recent candle before the signal that closed above its own VWAP. If no prior candle qualifies, the trade is skipped. The target is four times the distance from the actual entry fill to that stop.
 - Running-candle RSI exits at 74 or higher for longs and 20 or lower for shorts. The EMA 5 exit occurs at candle close when both the traded-price and mark-price candles miss their respective EMA 5.
 
 The Python engine uses Delta candle data. It builds 10-minute candles from consecutive 5-minute candles and uses UTC day boundaries for session VWAP. Exact indicator parity with Delta's chart and the live order lifecycle have yet to be verified. Strategy entry and exit reason labels are available for orders sent by versions that include reason tags.

@@ -104,12 +104,28 @@ def entry_setup(candles, seconds):
                 continue
         if (average[index - 1] <= vwap[index - 1] and average[index] > vwap[index]
                 and signal.close > vwap[index] and confirmation.close > signal.high):
-            matches.setdefault("buy", candles[index - 1].low)
+            if "buy" not in matches:
+                matches["buy"] = stop_before_signal(candles, vwap, index, "buy")
         if (average[index - 1] >= vwap[index - 1] and average[index] < vwap[index]
                 and signal.close < vwap[index] and confirmation.close < signal.low):
-            matches.setdefault("sell", candles[index - 1].high)
+            if "sell" not in matches:
+                matches["sell"] = stop_before_signal(candles, vwap, index, "sell")
     if len(matches) == 1:
-        return next(iter(matches.items()))
+        side, stop = next(iter(matches.items()))
+        if stop is not None:
+            return side, stop
+    return None
+
+
+def stop_before_signal(candles, vwap, signal_index, side):
+    for index in range(signal_index - 1, -1, -1):
+        candle, level = candles[index], vwap[index]
+        if level is None:
+            continue
+        if side == "buy" and candle.close < level:
+            return candle.low
+        if side == "sell" and candle.close > level:
+            return candle.high
     return None
 
 
