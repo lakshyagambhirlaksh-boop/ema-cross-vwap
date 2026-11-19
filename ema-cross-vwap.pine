@@ -35,13 +35,13 @@ if orderFilled and strategy.position_size > 0 and not na(activeLongStop)
     float entryPrice = strategy.position_avg_price
     float risk = entryPrice - activeLongStop
     if risk > 0
-        float target = math.round_to_mintick(entryPrice + 4 * risk)
+        float target = math.round_to_mintick(entryPrice + 3 * risk)
         strategy.exit("Long SL/TP", from_entry = "Long", stop = activeLongStop, limit = target)
 else if orderFilled and strategy.position_size < 0 and not na(activeShortStop)
     float entryPrice = strategy.position_avg_price
     float risk = activeShortStop - entryPrice
     if risk > 0
-        float target = math.round_to_mintick(entryPrice - 4 * risk)
+        float target = math.round_to_mintick(entryPrice - 3 * risk)
         strategy.exit("Short SL/TP", from_entry = "Short", stop = activeShortStop, limit = target)
 
 bool evaluateSignals = barstate.isrealtime or not orderFilled

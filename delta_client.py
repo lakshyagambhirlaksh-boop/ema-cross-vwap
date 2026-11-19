@@ -211,6 +211,6 @@ def bracket_matches_target(stop, target, entry):
         risk = price - stop_price
         tolerance = Decimal(1).scaleb(target_price.as_tuple().exponent) / 2
         return (creation_gap <= 1 and (risk > 0 if entry["side"] == "buy" else risk < 0)
-                and abs(target_price - (price + 4 * risk)) <= tolerance)
+                and any(abs(target_price - (price + multiple * risk)) <= tolerance for multiple in (3, 4)))
     except (KeyError, ValueError, TypeError, InvalidOperation):
         return False
