@@ -5,8 +5,6 @@
 /.delta-positions.tmp
 /.delta-positions.run.json
 /.delta-positions.run.tmp
-/.delta-positions.vwap.json
-/.delta-positions.vwap.tmp
 /.delta-cloud-*.json
 /.delta-cloud-*.tmp
 /.streamlit/secrets.toml

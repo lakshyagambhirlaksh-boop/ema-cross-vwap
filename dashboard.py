@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 from urllib.error import URLError
 from uuid import uuid4
 
-from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles
+from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles, session_vwap
 from delta_client import (
     CONTRACTS, DELTA_OPENER, dated_futures, delta_request,
     public_delta, strategy_activity, tradeable_product, valid_contract_symbol,
@@ -50,9 +50,8 @@ def indicator_snapshot(timeframe):
                 candles = fetch_candles(public_delta, symbol, timeframe, now)
                 closed = [candle for candle in candles if candle.time + seconds <= now]
                 if closed:
-                    vwap = STRATEGY.chart_vwap.series(symbol, timeframe, closed[-1:])[0]
                     return {"contract": symbol, "candle_time": closed[-1].time,
-                            "ema8": ema(closed, 8)[-1], "vwap": vwap}
+                            "ema8": ema(closed, 8)[-1], "vwap": session_vwap(closed)[-1]}
             except (OSError, ValueError, KeyError, TypeError):
                 pass
             return {"contract": symbol, "candle_time": None, "ema8": None, "vwap": None}
@@ -80,7 +79,7 @@ def order_payload(data):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        if self.path not in ("/api/orders", "/api/strategy/start", "/api/strategy/stop", "/api/chart-vwap"):
+        if self.path not in ("/api/orders", "/api/strategy/start", "/api/strategy/stop"):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         origin = f"http://127.0.0.1:{self.server.server_port}"
@@ -100,18 +99,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            maximum = 131072 if self.path == "/api/chart-vwap" else 4096
-            if not 0 < length <= maximum:
+            if not 0 < length <= 4096:
                 raise ValueError
             data = json.loads(self.rfile.read(length))
         except (ValueError, UnicodeError):
-            self.send_json(400, {"message": "Invalid JSON payload or request size."})
+            self.send_json(400, {"message": "Invalid order. Check the contract, side, and lots."})
             return
         if self.path == "/api/strategy/start":
             self.start_strategy(data)
-            return
-        if self.path == "/api/chart-vwap":
-            self.receive_chart_vwap(data)
             return
         try:
             order = order_payload(data)
@@ -135,27 +130,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         accepted = result.get("result") or {}
         self.send_json(200, {"id": accepted.get("id"), "state": accepted.get("state")})
-
-    def receive_chart_vwap(self, data):
-        if not isinstance(data, dict):
-            self.send_json(400, {"message": "Supply a contract, timeframe, and chart readings."})
-            return
-        symbol, timeframe = data.get("contract"), data.get("timeframe")
-        if not valid_contract_symbol(symbol) or not isinstance(timeframe, str) or timeframe not in RESOLUTIONS:
-            self.send_json(400, {"message": "Invalid Delta contract or timeframe."})
-            return
-        try:
-            received = STRATEGY.chart_vwap.ingest(symbol, timeframe, data.get("readings"), int(time.time()))
-        except (ValueError, OverflowError) as error:
-            self.send_json(400, {"message": str(error)})
-            return
-        except OSError:
-            self.send_json(503, {"message": "Could not save Delta chart VWAP readings."})
-            return
-        with INDICATOR_LOCK:
-            INDICATOR_CACHE.pop(timeframe, None)
-        STRATEGY.wake.set()
-        self.send_json(200, {"received": received})
 
     def start_strategy(self, data):
         if not isinstance(data, dict):
@@ -236,12 +210,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, KeyError):
                 self.send_json(502, {"message": "Unable to read Delta strategy data."})
                 return
-            values = STRATEGY.chart_vwap.series(symbol, timeframe, closed)
             self.send_json(200, {
                 "contract": symbol, "timeframe": timeframe, "candle_time": candle.time,
-                "ema8": ema(closed, 8)[-1], "vwap": values[-1],
+                "ema8": ema(closed, 8)[-1], "vwap": session_vwap(closed)[-1],
                 "mark_candle_available": any(item.time == candle.time for item in mark),
-                "entry_setup": entry_setup(closed, seconds, values) if values[-1] is not None else None,
+                "entry_setup": entry_setup(closed, seconds),
                 "positions_readable": positions.get("success") is True,
             })
             return

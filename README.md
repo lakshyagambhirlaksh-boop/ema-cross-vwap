@@ -20,13 +20,7 @@ The engine starts with new entries disabled on a fresh install. Select contracts
 - A long stop uses the low of the most recent candle before the signal that closed below its own VWAP. A short stop uses the high of the most recent candle before the signal that closed above its own VWAP. If no prior candle qualifies, the trade is skipped. The target is four times the distance from the actual entry fill to that stop.
 - Running-candle RSI exits at 74 or higher for longs and 20 or lower for shorts.
 
-The Python engine uses Delta candle data and builds 10-minute candles from consecutive 5-minute candles. It uses supplied Delta chart VWAP readings for entries and reversals. Strategy entry and exit reason labels are available for orders sent by versions that include reason tags.
-
-## Supply Delta chart VWAP readings
-
-Delta's public API supplies candles and volume. It has no documented feed for the plotted VWAP. A trusted chart sender must submit closed-candle readings to `POST /api/chart-vwap` through the local dashboard or VPS SSH tunnel. The request takes JSON with `contract`, `timeframe`, and `readings`, an array of objects with `candle_time` (the candle's open time in Unix seconds) and `vwap` (the chart value). The request must use the dashboard URL as its `Origin`. Supply the latest and preceding closed readings so the strategy can confirm the cross and find its stop candle.
-
-No automatic chart-value sender is included. Without current readings, new entries and reversals wait. Exchange stop-loss and target orders remain in effect, and the bot continues checking the running-candle RSI exit.
+The Python engine uses Delta candle data. It builds 10-minute candles from consecutive 5-minute candles and uses UTC day boundaries for session VWAP. Exact indicator parity with Delta's chart and the live order lifecycle have yet to be verified. Strategy entry and exit reason labels are available for orders sent by versions that include reason tags.
 
 ## Deploy the Streamlit dashboard
 
