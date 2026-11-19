@@ -454,7 +454,19 @@
           response = await fetch(activityUrl, { cache: "no-store" });
         }
         if (!response.ok) throw new Error();
-        const data = await response.json();
+        let data = await response.json();
+        if (activityUrl === "/api/activity" && location.port === "18768" && !data.includes_bracket_fills) {
+          const readOnlyUrl = "http://127.0.0.1:18769/api/activity";
+          try {
+            const updated = await fetch(readOnlyUrl, { cache: "no-store" });
+            if (updated.ok) {
+              data = await updated.json();
+              activityUrl = readOnlyUrl;
+            }
+          } catch {
+            // Keep showing available tagged fills if the history tunnel is down.
+          }
+        }
         const activities = data.activities.filter(activity =>
           Number(activity.filled_lots) > 0 &&
           (activity.strategy_verified === true ||

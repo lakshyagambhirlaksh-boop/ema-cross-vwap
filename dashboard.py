@@ -25,7 +25,7 @@ from live_strategy import LiveStrategy
 DASHBOARD = Path(__file__).with_suffix(".html")
 POSITIONS_PATH = "/api/positions"
 ACTIVITY_PATH = "/api/activity"
-POSITIONS_PORT = 8770
+POSITIONS_PORT = int(os.environ.get("POSITIONS_PORT", "8770"))
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8768"))
 
 
@@ -253,7 +253,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except (OSError, ValueError, KeyError, TypeError):
             self.send_json(502, {"message": "Delta order history unavailable."}, origin)
             return
-        self.send_json(200, {"activities": rows}, origin)
+        self.send_json(200, {"activities": rows, "includes_bracket_fills": True}, origin)
 
 
 class PositionsHandler(DashboardHandler):

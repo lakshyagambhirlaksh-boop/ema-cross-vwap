@@ -49,6 +49,8 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:18768:127.0.0.1:18768 YOUR_VPS_U
 
 Leave the SSH terminal open and visit [the VPS dashboard through the tunnel](http://127.0.0.1:18768/). In the dashboard sidebar, find the public IPv4 and allowlist it for that API key in Delta. Verify that the sidebar shows **Connected**.
 
+If your VPS also runs the read-only `delta-history.service` while the main trading process awaits a scheduled restart, add `-L 127.0.0.1:18769:127.0.0.1:18769` to the SSH command to load the updated history without interrupting trading.
+
 The strategy starts with entries stopped. Before starting this engine, pause any other copy running on the same Delta account and contracts. Wait for positions tracked by that copy to close, or manage them there until they close. Select contracts, submit the timeframe, set lots, and confirm **Start strategy** when you are ready to allow real orders.
 
 ## Update and inspect a Docker deployment

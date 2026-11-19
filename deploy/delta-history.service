@@ -1,0 +1,23 @@
+[Unit]
+Description=Read-only Delta strategy history feed
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/delta-strategy
+ExecStart=/usr/bin/python3 /opt/delta-strategy/dashboard.py --positions-only
+EnvironmentFile=/etc/delta-strategy/credentials.env
+Environment=DASHBOARD_PORT=18768
+Environment=POSITIONS_PORT=18769
+Environment=PYTHONDONTWRITEBYTECODE=1
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
