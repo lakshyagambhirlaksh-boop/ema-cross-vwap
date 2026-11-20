@@ -285,21 +285,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except (OSError, ValueError, KeyError, TypeError):
                     protective_prices = None
             rows = []
+            with STRATEGY.lock:
+                tracked = dict(STRATEGY.trades)
             for position in open_positions:
                 size = int(position["size"])
+                symbol = position.get("product_symbol") or str(position["product_id"])
+                record = tracked.get(symbol, {})
+                bot_target = record.get("software_target")
                 key = (position["product_id"], "sell" if size > 0 else "buy")
                 stops = protective_prices.get((*key, "stop_loss_order"), []) if protective_prices is not None else []
                 targets = protective_prices.get((*key, "take_profit_order"), []) if protective_prices is not None else []
                 rows.append({
-                    "contract": position.get("product_symbol") or str(position["product_id"]),
+                    "contract": symbol,
                     "side": "Long" if size > 0 else "Short",
                     "lots": abs(size),
                     "entry": position.get("entry_price"),
                     "mark": position.get("mark_price"),
                     "pnl": position.get("unrealized_pnl"),
-                    "stop_loss": ", ".join(dict.fromkeys(stops)) or
+                    "stop_loss": (record["stop"] + " (bot)" if bot_target else None) or ", ".join(dict.fromkeys(stops)) or
                     ("No active stop" if protective_prices is not None else "Unavailable"),
-                    "target": ", ".join(dict.fromkeys(targets)) or
+                    "target": (bot_target + " (bot)" if bot_target else None) or ", ".join(dict.fromkeys(targets)) or
                     ("No active target" if protective_prices is not None else "Unavailable"),
                 })
         except (OSError, ValueError, KeyError, TypeError):

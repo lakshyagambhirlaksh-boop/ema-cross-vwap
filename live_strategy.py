@@ -263,16 +263,66 @@ class LiveStrategy:
             Decimal("1"), rounding=ROUND_HALF_UP) * tick
         if risk <= 0 or target <= 0:
             raise ValueError("Fill was outside the valid stop range.")
-        stop_price = format(stop, "f")
-        self.call("POST", "/v2/orders/bracket", {
-            "product_id": trade["id"], "bracket_stop_trigger_method": "last_traded_price",
-            "stop_loss_order": {"order_type": "limit_order", "stop_price": stop_price,
-                                "limit_price": stop_price},
-            "take_profit_order": {"order_type": "limit_order", "stop_price": format(target, "f"),
-                                  "limit_price": format(target, "f")},
-        })
         with self.lock:
-            self.save_trade(symbol, {**trade, "protected": True})
+            self.save_trade(symbol, {**trade, "protected": True, "software_target": format(target, "f")})
+
+    def save_limit_exit(self, symbol, trade, **changes):
+        updated = {**trade, "limit_exit": {**trade["limit_exit"], **changes}}
+        with self.lock:
+            self.save_trade(symbol, updated)
+        return updated
+
+    def manage_limit_exit(self, symbol, trade, size):
+        state = trade["limit_exit"]
+        now = time.time()
+        expired = now >= state["deadline"]
+        if not expired and now < state["next_check"]:
+            return
+        side = "sell" if size > 0 else "buy"
+        client_id = state.get("client_id")
+        order = self.call("GET", "/v2/orders/client_order_id/" + client_id) if client_id else None
+        if order and order["state"] in ("closed", "cancelled"):
+            trade = self.save_limit_exit(symbol, trade, client_id=None)
+            order = None
+        if time.time() >= state["deadline"]:
+            if order:
+                cancelled = self.call("DELETE", "/v2/orders", {"id": order["id"], "product_id": trade["id"]})
+                if not cancelled or cancelled.get("state") not in ("closed", "cancelled"):
+                    return
+            remaining = int(self.position(trade["id"])["size"])
+            if remaining and (remaining > 0) == (size > 0):
+                with self.lock:
+                    final = {key: value for key, value in trade.items() if key != "limit_exit"}
+                    self.save_trade(symbol, {**final, "closing": True, "close_reason": state["reason"]})
+                self.exit(symbol, remaining, state["reason"])
+            return
+        price = self.maker_quote(symbol, side)
+        now = time.time()
+        if now >= state["deadline"]:
+            return
+        trade = self.save_limit_exit(symbol, trade, next_check=now + MAKER_INTERVAL)
+        if order:
+            if price != Decimal(str(order["limit_price"])):
+                self.call("PUT", "/v2/orders", {
+                    "id": order["id"], "product_id": trade["id"],
+                    "limit_price": format(price, "f"), "post_only": True,
+                })
+        else:
+            client_id = strategy_order_id(state["reason"])
+            trade = self.save_limit_exit(symbol, trade, client_id=client_id)
+            try:
+                self.call("POST", "/v2/orders", {
+                    "product_symbol": symbol, "side": side, "size": abs(size),
+                    "order_type": "limit_order", "limit_price": format(price, "f"),
+                    "time_in_force": "gtc", "post_only": True, "reduce_only": True,
+                    "client_order_id": client_id,
+                })
+            except DeltaOrderError as error:
+                if not error.code.startswith("HTTP ") and error.code not in (
+                    "unknown_error", "internal_server_error", "internal_error", "request_timeout"
+                ):
+                    self.save_limit_exit(symbol, trade, client_id=None)
+                raise
 
     def manage(self, symbol, trade, now):
         if "maker" in trade:
@@ -297,6 +347,9 @@ class LiveStrategy:
         if trade.get("closing"):
             self.exit(symbol, size, trade.get("close_reason", "ema-exit-"))
             return
+        if trade.get("limit_exit"):
+            self.manage_limit_exit(symbol, trade, size)
+            return
         if not trade.get("protected"):
             trade = {**trade, "filled": True}
             with self.lock:
@@ -304,13 +357,26 @@ class LiveStrategy:
             try:
                 self.protect(symbol, trade, size, position)
             except (OSError, ValueError, KeyError, ArithmeticError):
-                # A failed or uncertain bracket must not leave an unprotected position open.
-                # The close is reduce-only so an existing bracket fill cannot reverse the trade.
                 with self.lock:
-                    self.save_trade(symbol, {**trade, "closing": True, "close_reason": "ema-protect-"})
-                self.exit(symbol, size, "ema-protect-")
-                raise ValueError("Bracket could not be confirmed. A reduce-only close was requested.")
+                    self.save_trade(symbol, {**trade, "closing": True, "close_reason": "ema-save-"})
+                self.exit(symbol, size, "ema-save-")
+                raise ValueError("Stop and target could not be saved. A reduce-only close was requested.")
             return
+        if trade.get("software_target"):
+            last = Decimal(str(self.public("/v2/tickers/" + symbol)["close"]))
+            stop, target = Decimal(trade["stop"]), Decimal(trade["software_target"])
+            stop_hit = last <= stop if size > 0 else last >= stop
+            target_hit = last >= target if size > 0 else last <= target
+            if stop_hit or target_hit:
+                started = time.time()
+                reason = "ema-sl-" if stop_hit else "ema-tp-"
+                trade = {**trade, "limit_exit": {
+                    "reason": reason, "deadline": started + 20, "next_check": started,
+                }}
+                with self.lock:
+                    self.save_trade(symbol, trade)
+                self.manage_limit_exit(symbol, trade, size)
+                return
         seconds, _ = RESOLUTIONS[trade["timeframe"]]
         traded = fetch_candles(self.public, symbol, trade["timeframe"], now)
         if rsi_exit(traded, seconds, now, size):
