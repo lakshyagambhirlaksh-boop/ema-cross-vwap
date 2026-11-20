@@ -263,9 +263,11 @@ class LiveStrategy:
             Decimal("1"), rounding=ROUND_HALF_UP) * tick
         if risk <= 0 or target <= 0:
             raise ValueError("Fill was outside the valid stop range.")
+        stop_price = format(stop, "f")
         self.call("POST", "/v2/orders/bracket", {
             "product_id": trade["id"], "bracket_stop_trigger_method": "last_traded_price",
-            "stop_loss_order": {"order_type": "market_order", "stop_price": format(stop, "f")},
+            "stop_loss_order": {"order_type": "limit_order", "stop_price": stop_price,
+                                "limit_price": stop_price},
             "take_profit_order": {"order_type": "limit_order", "stop_price": format(target, "f"),
                                   "limit_price": format(target, "f")},
         })
