@@ -259,7 +259,7 @@ class LiveStrategy:
         tick = Decimal(trade["tick"])
         direction = 1 if size > 0 else -1
         risk = direction * (entry - stop)
-        target = ((entry + direction * 3 * risk) / tick).quantize(
+        target = ((entry + direction * Decimal("1.5") * risk) / tick).quantize(
             Decimal("1"), rounding=ROUND_HALF_UP) * tick
         if risk <= 0 or target <= 0:
             raise ValueError("Fill was outside the valid stop range.")
