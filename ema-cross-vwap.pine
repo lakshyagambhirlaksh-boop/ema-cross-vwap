@@ -20,7 +20,7 @@ if not chart.is_standard
 
 bool newSession = timeframe.change("1D") or barstate.isfirst
 float ema = ta.ema(close, 8)
-float vwap = ta.vwap(ohlc4, newSession)
+float vwap = ta.vwap(hlc3, newSession)
 float rsi = ta.rsi(close, 14)
 bool crossedAbove = ta.crossover(ema, vwap)
 bool crossedBelow = ta.crossunder(ema, vwap)
@@ -79,7 +79,7 @@ else if shortConfirmed and not longConfirmed and strategy.position_size >= 0 and
     strategy.exit("Short SL/TP", from_entry = "Short", stop = activeShortStop)
 
 plot(ema, "8 EMA", color = color.maroon, linewidth = 2)
-plot(vwap, "Session VWAP (OHLC4)", color = color.blue, linewidth = 2)
+plot(vwap, "Session VWAP (HLC3)", color = color.blue, linewidth = 2)
 plotshape(longSignal, "Long signal candle", shape.circle, location.belowbar, color.blue, size = size.tiny)
 plotshape(longConfirmed, "Long confirmation candle", shape.triangleup, location.belowbar, color.lime, size = size.tiny)
 plotshape(shortSignal, "Short signal candle", shape.circle, location.abovebar, color.blue, size = size.tiny)
