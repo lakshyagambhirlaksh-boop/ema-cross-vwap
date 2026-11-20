@@ -78,7 +78,7 @@ def session_vwap(candles):
         day = candle.time // 86400
         if day != session:
             session, value, volume = day, 0.0, 0.0
-        value += (candle.high + candle.low + candle.close) / 3 * candle.volume
+        value += (candle.open + candle.high + candle.low + candle.close) / 4 * candle.volume
         volume += candle.volume
         values.append(value / volume if volume else None)
     return values
