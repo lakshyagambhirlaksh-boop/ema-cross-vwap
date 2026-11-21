@@ -39,6 +39,8 @@
       background: #151f2e;
     }
     aside h2 { margin: 0 0 .4rem; }
+    .account-balance { text-align: right; margin-bottom: 1rem; }
+    #account-balance { font-weight: 600; font-variant-numeric: tabular-nums; }
     .connection { margin-top: 1rem; }
     #delta-status[data-connected="true"] { color: #91e6af; }
     #delta-status[data-connected="false"] { color: #ffb4b4; }
@@ -184,6 +186,10 @@
     </section>
   </main>
   <aside aria-labelledby="delta-heading">
+    <div class="account-balance">
+      <h2>Account balance</h2>
+      <output id="account-balance">Loading…</output>
+    </div>
     <h2 id="delta-heading">Delta API connection</h2>
     <div id="delta-status" role="status">Checking…</div>
     <div class="connection">
@@ -628,6 +634,25 @@
         activityPending = false;
       }
     }
+    const accountBalance = document.querySelector("#account-balance");
+    const inrFormat = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" });
+    let balancePending = false;
+    async function refreshBalance() {
+      if (balancePending) return;
+      balancePending = true;
+      try {
+        const response = await fetch("/api/account-balance", { cache: "no-store" });
+        if (!response.ok) throw new Error("Account balance unavailable");
+        const { balance_inr } = await response.json();
+        accountBalance.textContent = inrFormat.format(balance_inr);
+      } catch {
+        accountBalance.textContent = "Unavailable";
+      } finally {
+        balancePending = false;
+      }
+    }
+    refreshBalance();
+    setInterval(refreshBalance, 1000);
     refreshDashboard();
     setInterval(refreshDashboard, 1000);
   </script>

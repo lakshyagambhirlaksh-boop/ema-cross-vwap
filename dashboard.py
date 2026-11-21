@@ -8,6 +8,7 @@ import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -164,6 +165,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlsplit(self.path)
         path = parsed.path
+        if path == "/api/account-balance":
+            try:
+                wallet = delta_request("GET", "/v2/wallet/balances", timeout=5)
+                if wallet.get("success") is not True:
+                    raise ValueError("Delta wallet request failed")
+                amount = next(row["balance_inr"] for row in wallet["result"]
+                              if row.get("asset_symbol") == "USD")
+                balance = Decimal(str(amount))
+                if not balance.is_finite():
+                    raise ValueError("Invalid INR balance")
+            except (OSError, ValueError, InvalidOperation, KeyError, StopIteration, TypeError):
+                self.send_json(502, {"message": "Account balance unavailable."})
+            else:
+                self.send_json(200, {"balance_inr": str(balance)})
+            return
         if path == "/api/indicators":
             requested = parse_qs(parsed.query).get("timeframe", ["3 min"])[0]
             timeframe = STRATEGY.status()["timeframe"] or requested
