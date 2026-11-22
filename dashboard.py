@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 from urllib.error import URLError
 from uuid import uuid4
 
-from delta_strategy import RESOLUTIONS, ema, entry_setup, fetch_candles, session_vwap
+from delta_strategy import RESOLUTIONS, candle_history_start, ema, entry_setup, fetch_candles, session_vwap
 from delta_client import (
     CONTRACTS, DELTA_OPENER, dated_futures, delta_request,
     public_delta, strategy_activity, tradeable_product, valid_contract_symbol,
@@ -35,6 +35,7 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8768"))
 STATE_DIR = Path(os.environ.get("DELTA_STATE_DIR", str(DASHBOARD.parent)))
 STRATEGY = LiveStrategy(delta_request, public_delta, STATE_DIR / ".delta-positions.json")
 INDICATOR_CACHE = {}
+INDICATOR_HISTORY = {}
 INDICATOR_LOCK = Lock()
 
 
@@ -43,26 +44,35 @@ def indicator_snapshot(timeframe):
     with INDICATOR_LOCK:
         now = int(time.time())
         cached = INDICATOR_CACHE.get(timeframe)
-        if cached and cached[0] > now:
+        if cached and time.monotonic() - cached[0] < 1:
             return cached[1]
 
         def read_contract(symbol):
             try:
-                candles = fetch_candles(public_delta, symbol, timeframe, now)
-                closed = [candle for candle in candles if candle.time + seconds <= now]
-                if closed:
-                    return {"contract": symbol, "candle_time": closed[-1].time,
-                            "ema8": ema(closed, 8)[-1], "vwap": session_vwap(closed)[-1]}
+                history_key = (timeframe, symbol)
+                history = INDICATOR_HISTORY.get(history_key, [])
+                start = history[-1].time - seconds if history else None
+                cutoff = candle_history_start(timeframe, now)
+                if start is not None and start < cutoff:
+                    history, start = [], None
+                updates = fetch_candles(public_delta, symbol, timeframe, now, start=start)
+                if updates:
+                    merged = {candle.time: candle for candle in history if candle.time >= cutoff}
+                    merged.update((candle.time, candle) for candle in updates if candle.time <= now)
+                    candles = [merged[key] for key in sorted(merged)]
+                    if candles:
+                        INDICATOR_HISTORY[history_key] = candles
+                        return {"contract": symbol, "candle_time": candles[-1].time,
+                                "ema8": ema(candles, 8)[-1], "vwap": session_vwap(candles)[-1]}
             except (OSError, ValueError, KeyError, TypeError):
                 pass
             return {"contract": symbol, "candle_time": None, "ema8": None, "vwap": None}
 
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        sampled_at = time.monotonic()
+        with ThreadPoolExecutor(max_workers=len(CONTRACTS)) as pool:
             rows = list(pool.map(read_contract, sorted(CONTRACTS)))
-        boundary = now // seconds * seconds
-        expires = boundary + seconds if all(row["candle_time"] == boundary - seconds for row in rows) else now + 5
         snapshot = {"timeframe": timeframe, "rows": rows}
-        INDICATOR_CACHE[timeframe] = (expires, snapshot)
+        INDICATOR_CACHE[timeframe] = (sampled_at, snapshot)
         return snapshot
 
 

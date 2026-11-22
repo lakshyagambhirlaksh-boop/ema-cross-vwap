@@ -528,7 +528,7 @@
           indicatorsRows.replaceChildren(rows);
           lastIndicators = signature;
         }
-        indicatorsStatus.textContent = data.timeframe + " · Latest closed Delta candle";
+        indicatorsStatus.textContent = data.timeframe + " · Latest available Delta candle";
       } catch {
         indicatorsStatus.textContent = "Could not refresh indicator values.";
       } finally {

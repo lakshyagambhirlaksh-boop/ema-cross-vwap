@@ -21,13 +21,18 @@ class Candle:
     volume: float
 
 
-def fetch_candles(fetch, symbol, timeframe, now):
-    seconds, resolution = RESOLUTIONS[timeframe]
+def candle_history_start(timeframe, now):
+    seconds, _ = RESOLUTIONS[timeframe]
     native_seconds = 300 if timeframe == "10 min" else seconds
     history = min(1999 * native_seconds, max(2 * 86400, 300 * seconds))
+    return now - history
+
+
+def fetch_candles(fetch, symbol, timeframe, now, *, start=None):
+    seconds, resolution = RESOLUTIONS[timeframe]
     query = urlencode({
         "symbol": symbol, "resolution": resolution,
-        "start": now - history, "end": now,
+        "start": candle_history_start(timeframe, now) if start is None else start, "end": now,
     })
     candles = sorted(
         (Candle(int(row["time"]), *(float(row[key]) for key in ("open", "high", "low", "close")),
