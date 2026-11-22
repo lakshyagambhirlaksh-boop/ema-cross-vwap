@@ -83,6 +83,17 @@
     .positions-table { overflow-x: auto; }
     .positions-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
     .positions-table th, .positions-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #2d4055; }
+    .indicator-tables {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+      gap: .75rem;
+      align-items: start;
+    }
+    .indicator-tables .positions-table { border: 1px solid #2d4055; border-radius: .4rem; }
+    .indicator-tables table { font-size: .75rem; line-height: 1.3; }
+    .indicator-tables th, .indicator-tables td { padding: .3rem .35rem; }
+    .indicator-tables thead { background: #1d2e40; }
+    .indicator-tables td:nth-child(2), .indicator-tables td:nth-child(3) { white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -151,14 +162,25 @@
     <section aria-labelledby="indicators-heading">
       <h2 id="indicators-heading">Strategy EMA and VWAP</h2>
       <p id="indicators-status" role="status">Loading indicator values…</p>
-      <div class="positions-table">
-        <table aria-labelledby="indicators-heading">
+      <div class="indicator-tables">
+        <div class="positions-table">
+        <table aria-label="EMA and VWAP, first group of contracts">
           <thead><tr>
             <th scope="col">Contract</th><th scope="col">8 EMA</th><th scope="col">VWAP</th>
-            <th scope="col">Closed candle open time (IST)</th>
+            <th scope="col" title="Candle open time in India Standard Time">Time (IST)</th>
           </tr></thead>
-          <tbody id="indicators-rows"></tbody>
+          <tbody id="indicators-left"></tbody>
         </table>
+        </div>
+        <div class="positions-table">
+        <table aria-label="EMA and VWAP, second group of contracts">
+          <thead><tr>
+            <th scope="col">Contract</th><th scope="col">8 EMA</th><th scope="col">VWAP</th>
+            <th scope="col" title="Candle open time in India Standard Time">Time (IST)</th>
+          </tr></thead>
+          <tbody id="indicators-right"></tbody>
+        </table>
+        </div>
       </div>
     </section>
     <section aria-labelledby="positions-heading">
@@ -501,7 +523,7 @@
       }
     });
     const indicatorsStatus = document.querySelector("#indicators-status");
-    const indicatorsRows = document.querySelector("#indicators-rows");
+    const indicatorTables = [document.querySelector("#indicators-left"), document.querySelector("#indicators-right")];
     const indicatorPrice = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
     const indicatorTime = new Intl.DateTimeFormat("en-IN", {
       timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
@@ -522,8 +544,9 @@
         }
         const signature = JSON.stringify(data);
         if (signature !== lastIndicators) {
-          const rows = document.createDocumentFragment();
-          for (const item of data.rows) {
+          const groups = indicatorTables.map(() => document.createDocumentFragment());
+          const midpoint = Math.ceil(data.rows.length / 2);
+          for (const [index, item] of data.rows.entries()) {
             const row = document.createElement("tr");
             const values = [
               item.contract,
@@ -532,9 +555,9 @@
               item.candle_time == null ? "—" : indicatorTime.format(new Date(item.candle_time * 1000))
             ];
             for (const value of values) row.insertCell().textContent = value;
-            rows.append(row);
+            groups[index < midpoint ? 0 : 1].append(row);
           }
-          indicatorsRows.replaceChildren(rows);
+          indicatorTables.forEach((table, index) => table.replaceChildren(groups[index]));
           lastIndicators = signature;
         }
         indicatorsStatus.textContent = data.timeframe + " · Latest available Delta candle";
