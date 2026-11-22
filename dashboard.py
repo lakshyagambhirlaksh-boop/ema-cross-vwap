@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import parse_qs, urlsplit
 from urllib.error import URLError
 from uuid import uuid4
@@ -37,15 +37,23 @@ STRATEGY = LiveStrategy(delta_request, public_delta, STATE_DIR / ".delta-positio
 INDICATOR_CACHE = {}
 INDICATOR_HISTORY = {}
 INDICATOR_LOCK = Lock()
+INDICATOR_PENDING = set()
 
 
 def indicator_snapshot(timeframe):
-    seconds, _ = RESOLUTIONS[timeframe]
     with INDICATOR_LOCK:
-        now = int(time.time())
         cached = INDICATOR_CACHE.get(timeframe)
-        if cached and time.monotonic() - cached[0] < 1:
-            return cached[1]
+        if timeframe not in INDICATOR_PENDING and (
+                not cached or time.monotonic() - cached[0] >= 1):
+            INDICATOR_PENDING.add(timeframe)
+            Thread(target=sample_indicators, args=(timeframe,), daemon=True).start()
+        return cached[1] if cached else {"timeframe": timeframe, "rows": [], "loading": True}
+
+
+def sample_indicators(timeframe):
+    seconds, _ = RESOLUTIONS[timeframe]
+    try:
+        now = int(time.time())
 
         def read_contract(symbol):
             try:
@@ -72,8 +80,11 @@ def indicator_snapshot(timeframe):
         with ThreadPoolExecutor(max_workers=len(CONTRACTS)) as pool:
             rows = list(pool.map(read_contract, sorted(CONTRACTS)))
         snapshot = {"timeframe": timeframe, "rows": rows}
-        INDICATOR_CACHE[timeframe] = (sampled_at, snapshot)
-        return snapshot
+        with INDICATOR_LOCK:
+            INDICATOR_CACHE[timeframe] = (sampled_at, snapshot)
+    finally:
+        with INDICATOR_LOCK:
+            INDICATOR_PENDING.discard(timeframe)
 
 
 def order_payload(data):

@@ -511,6 +511,10 @@
         const response = await fetch("/api/indicators?" + search, { cache: "no-store" });
         if (!response.ok) throw new Error();
         const data = await response.json();
+        if (data.loading) {
+          indicatorsStatus.textContent = "Loading indicator values…";
+          return;
+        }
         const signature = JSON.stringify(data);
         if (signature !== lastIndicators) {
           const rows = document.createDocumentFragment();
