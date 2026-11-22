@@ -90,10 +90,13 @@
       align-items: start;
     }
     .indicator-tables .positions-table { border: 1px solid #2d4055; border-radius: .4rem; }
-    .indicator-tables table { font-size: .75rem; line-height: 1.3; }
-    .indicator-tables th, .indicator-tables td { padding: .3rem .35rem; }
+    .indicator-tables table { table-layout: fixed; font-size: .75rem; line-height: 1.3; }
+    .indicator-tables th, .indicator-tables td { padding: .3rem .25rem; }
     .indicator-tables thead { background: #1d2e40; }
-    .indicator-tables td:nth-child(2), .indicator-tables td:nth-child(3) { white-space: nowrap; }
+    .indicator-tables th:nth-child(1) { width: 25%; }
+    .indicator-tables th:nth-child(2), .indicator-tables th:nth-child(3) { width: 27%; }
+    .indicator-tables td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .indicator-tables td:last-child { white-space: pre; }
   </style>
 </head>
 <body>
@@ -530,8 +533,11 @@
     const indicatorsStatus = document.querySelector("#indicators-status");
     const indicatorTables = [document.querySelector("#indicators-left"), document.querySelector("#indicators-right")];
     const indicatorPrice = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    const indicatorDate = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata", day: "numeric", month: "short"
+    });
     const indicatorTime = new Intl.DateTimeFormat("en-IN", {
-      timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
+      timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit"
     });
     let indicatorsPending = false;
     let lastIndicators = "";
@@ -557,9 +563,14 @@
               item.contract,
               item.ema8 == null ? "—" : indicatorPrice.format(item.ema8),
               item.vwap == null ? "—" : indicatorPrice.format(item.vwap),
-              item.candle_time == null ? "—" : indicatorTime.format(new Date(item.candle_time * 1000))
+              item.candle_time == null ? "—\n " :
+                indicatorDate.format(item.candle_time * 1000) + "\n" + indicatorTime.format(item.candle_time * 1000)
             ];
-            for (const value of values) row.insertCell().textContent = value;
+            for (const value of values) {
+              const cell = row.insertCell();
+              cell.textContent = value;
+              cell.title = value.trim().replace("\n", " ");
+            }
             groups[index < midpoint ? 0 : 1].append(row);
           }
           indicatorTables.forEach((table, index) => table.replaceChildren(groups[index]));
