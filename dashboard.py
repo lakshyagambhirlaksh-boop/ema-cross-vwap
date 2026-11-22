@@ -80,7 +80,8 @@ def order_payload(data):
 
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        if self.path not in ("/api/orders", "/api/strategy/start", "/api/strategy/stop"):
+        if self.path not in ("/api/orders", "/api/strategy/start", "/api/strategy/stop",
+                             "/api/strategy/lots"):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         origin = f"http://127.0.0.1:{self.server.server_port}"
@@ -108,6 +109,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/strategy/start":
             self.start_strategy(data)
+            return
+        if self.path == "/api/strategy/lots":
+            lots = data.get("lots") if isinstance(data, dict) else None
+            if type(lots) is not int or not 1 <= lots <= 2_147_483_647:
+                self.send_json(400, {"message": "Enter a valid whole number of lots."})
+                return
+            try:
+                applied = STRATEGY.update_lots(lots)
+            except OSError:
+                self.send_json(503, {"message": "Could not save the live lot size."})
+            else:
+                self.send_json(200, {"applied": applied})
             return
         try:
             order = order_payload(data)

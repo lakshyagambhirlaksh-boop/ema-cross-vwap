@@ -455,7 +455,7 @@
     }
     loadDatedFutures();
 
-    form.addEventListener("submit", event => {
+    form.addEventListener("submit", async event => {
       event.preventDefault();
       const fields = new FormData(form);
       const contracts = fields.getAll("contract");
@@ -464,12 +464,35 @@
         contractStatus.textContent = "Select at least one contract.";
         return;
       }
-      if (!Number.isSafeInteger(lots) || lots < 1) return;
+      if (!Number.isSafeInteger(lots) || lots < 1 || lots > 2147483647) {
+        contractStatus.textContent = "Enter a valid whole number of lots.";
+        return;
+      }
+      const saveButton = event.submitter;
+      if (saveButton) saveButton.disabled = true;
+      let applied = false;
       try {
+        const response = await fetch("/api/strategy/lots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lots })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message);
+        applied = result.applied;
         localStorage.setItem(contractSettingsKey, JSON.stringify({ contracts, lots }));
-        showSavedContracts(contracts.length, lots);
+        if (applied) {
+          contractStatus.textContent = "Live lot size updated to " + lots +
+            " per contract for new entries. Contract selection saved for the next start.";
+        } else {
+          showSavedContracts(contracts.length, lots);
+        }
       } catch {
-        contractStatus.textContent = "Could not save the selection in this browser.";
+        contractStatus.textContent = applied
+          ? "Live lot size updated. Could not save the selection in this browser."
+          : "Could not confirm the lot size update. Try saving again.";
+      } finally {
+        if (saveButton) saveButton.disabled = false;
       }
     });
     const indicatorsStatus = document.querySelector("#indicators-status");

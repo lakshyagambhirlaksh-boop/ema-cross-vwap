@@ -86,6 +86,17 @@ class LiveStrategy:
             write_state(self.run_config, {})
         self.wake.set()
 
+    def update_lots(self, lots):
+        with self.lock:
+            if not self.enabled:
+                return False
+            settings = {symbol: {**product, "lots": lots}
+                        for symbol, product in self.settings.items()}
+            write_state(self.run_config, settings)
+            self.settings = settings
+        self.wake.set()
+        return True
+
     def status(self):
         with self.lock:
             settings = next(iter(self.settings.values()), {})
@@ -415,6 +426,7 @@ class LiveStrategy:
         with self.lock:
             if not self.enabled or self.started_at != started_at:
                 return
+            trade["lots"] = self.settings[symbol]["lots"]
             self.save_trade(symbol, trade)
         self.submit_maker(symbol, trade, price)
 
