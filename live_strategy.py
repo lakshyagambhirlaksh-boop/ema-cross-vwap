@@ -113,16 +113,11 @@ class LiveStrategy:
     def position(self, product_id):
         return self.call("GET", "/v2/positions?" + urlencode({"product_id": product_id}))
 
-    def order(self, symbol, side, lots, *, client_id=None, reduce_only=False):
+    def market_entry(self, symbol, side, lots, *, client_id):
         return self.call("POST", "/v2/orders", {
             "product_symbol": symbol, "side": side, "size": lots, "order_type": "market_order",
-            "time_in_force": "ioc", "reduce_only": reduce_only,
-            "client_order_id": client_id or uuid4().hex,
+            "time_in_force": "ioc", "reduce_only": False, "client_order_id": client_id,
         })
-
-    def exit(self, symbol, size, reason):
-        self.order(symbol, "sell" if size > 0 else "buy", abs(size),
-                   client_id=strategy_order_id(reason), reduce_only=True)
 
     def maker_quote(self, symbol, side):
         book = self.public("/v2/l2orderbook/" + symbol + "?depth=1")
@@ -182,7 +177,7 @@ class LiveStrategy:
                     else:
                         self.save_trade(symbol, None)
                         return
-                self.order(symbol, final["side"], final["lots"], client_id=final["client_id"])
+                self.market_entry(symbol, final["side"], final["lots"], client_id=final["client_id"])
                 self.manage(symbol, final, int(time.time()))
                 return
         with self.lock:
@@ -272,37 +267,37 @@ class LiveStrategy:
             self.save_trade(symbol, updated)
         return updated
 
+    def start_limit_exit(self, symbol, trade, size, reason):
+        started = time.time()
+        trade = {**trade, "limit_exit": {
+            "reason": reason, "deadline": started + 20, "next_check": started,
+        }}
+        with self.lock:
+            self.save_trade(symbol, trade)
+        self.manage_limit_exit(symbol, trade, size)
+
     def manage_limit_exit(self, symbol, trade, size):
         state = trade["limit_exit"]
         now = time.time()
-        expired = now >= state["deadline"]
-        if not expired and now < state["next_check"]:
+        if now < state["next_check"]:
             return
         side = "sell" if size > 0 else "buy"
         client_id = state.get("client_id")
         order = self.call("GET", "/v2/orders/client_order_id/" + client_id) if client_id else None
         if order and order["state"] in ("closed", "cancelled"):
+            remaining = int(self.position(trade["id"])["size"])
+            if not remaining or (remaining > 0) != (size > 0) or abs(remaining) > trade["lots"]:
+                return
+            size = remaining
             trade = self.save_limit_exit(symbol, trade, client_id=None)
             order = None
-        if time.time() >= state["deadline"]:
-            if order:
-                cancelled = self.call("DELETE", "/v2/orders", {"id": order["id"], "product_id": trade["id"]})
-                if not cancelled or cancelled.get("state") not in ("closed", "cancelled"):
-                    return
-            remaining = int(self.position(trade["id"])["size"])
-            if remaining and (remaining > 0) == (size > 0):
-                with self.lock:
-                    final = {key: value for key, value in trade.items() if key != "limit_exit"}
-                    self.save_trade(symbol, {**final, "closing": True, "close_reason": state["reason"]})
-                self.exit(symbol, remaining, state["reason"])
+        if order and time.time() >= state["deadline"]:
+            self.save_limit_exit(symbol, trade, next_check=time.time() + MAKER_INTERVAL)
             return
         price = self.maker_quote(symbol, side)
-        now = time.time()
-        if now >= state["deadline"]:
-            return
-        trade = self.save_limit_exit(symbol, trade, next_check=now + MAKER_INTERVAL)
+        trade = self.save_limit_exit(symbol, trade, next_check=time.time() + MAKER_INTERVAL)
         if order:
-            if price != Decimal(str(order["limit_price"])):
+            if time.time() < state["deadline"] and price != Decimal(str(order["limit_price"])):
                 self.call("PUT", "/v2/orders", {
                     "id": order["id"], "product_id": trade["id"],
                     "limit_price": format(price, "f"), "post_only": True,
@@ -344,11 +339,11 @@ class LiveStrategy:
             return
         if (size > 0) != (trade["side"] == "buy") or abs(size) > trade["lots"]:
             raise ValueError("Position differs from the strategy entry. Check Delta.")
-        if trade.get("closing"):
-            self.exit(symbol, size, trade.get("close_reason", "ema-exit-"))
-            return
         if trade.get("limit_exit"):
             self.manage_limit_exit(symbol, trade, size)
+            return
+        if trade.get("closing"):
+            self.start_limit_exit(symbol, trade, size, trade.get("close_reason", "ema-exit-"))
             return
         if not trade.get("protected"):
             trade = {**trade, "filled": True}
@@ -357,10 +352,8 @@ class LiveStrategy:
             try:
                 self.protect(symbol, trade, size, position)
             except (OSError, ValueError, KeyError, ArithmeticError):
-                with self.lock:
-                    self.save_trade(symbol, {**trade, "closing": True, "close_reason": "ema-save-"})
-                self.exit(symbol, size, "ema-save-")
-                raise ValueError("Stop and target could not be saved. A reduce-only close was requested.")
+                self.start_limit_exit(symbol, trade, size, "ema-save-")
+                raise ValueError("Stop and target could not be saved. A reduce-only limit close was requested.")
             return
         if trade.get("software_target"):
             last = Decimal(str(self.public("/v2/tickers/" + symbol)["close"]))
@@ -368,14 +361,8 @@ class LiveStrategy:
             stop_hit = last <= stop if size > 0 else last >= stop
             target_hit = last >= target if size > 0 else last <= target
             if stop_hit or target_hit:
-                started = time.time()
                 reason = "ema-sl-" if stop_hit else "ema-tp-"
-                trade = {**trade, "limit_exit": {
-                    "reason": reason, "deadline": started + 20, "next_check": started,
-                }}
-                with self.lock:
-                    self.save_trade(symbol, trade)
-                self.manage_limit_exit(symbol, trade, size)
+                self.start_limit_exit(symbol, trade, size, reason)
                 return
         seconds, _ = RESOLUTIONS[trade["timeframe"]]
         traded = fetch_candles(self.public, symbol, trade["timeframe"], now)
@@ -383,8 +370,7 @@ class LiveStrategy:
             reason = "ema-rsi-"
             with self.lock:
                 self.last_candle[symbol] = (now // seconds - 1) * seconds
-                self.save_trade(symbol, {**trade, "closing": True, "close_reason": reason})
-            self.exit(symbol, size, reason)
+            self.start_limit_exit(symbol, trade, size, reason)
             return
         with self.lock:
             settings = self.settings.get(symbol) if self.enabled else None
@@ -397,9 +383,7 @@ class LiveStrategy:
                 return
             signal = entry_setup(closed, seconds)
             if signal and signal[0] != trade["side"]:
-                with self.lock:
-                    self.save_trade(symbol, {**trade, "closing": True, "close_reason": "ema-reverse-"})
-                self.exit(symbol, size, "ema-reverse-")
+                self.start_limit_exit(symbol, trade, size, "ema-reverse-")
 
     def scan(self, symbol, settings, now):
         seconds, _ = RESOLUTIONS[settings["timeframe"]]
