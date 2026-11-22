@@ -625,8 +625,9 @@
     const activityStatus = document.querySelector("#activity-status");
     const activityTable = document.querySelector("#activity-table");
     const activityRows = document.querySelector("#activity-rows");
+    const strategyEntryReason = "Confirmed 8 EMA / VWAP entry";
     const strategyReasons = new Set([
-      "Confirmed 8 EMA / VWAP entry",
+      strategyEntryReason,
       "RSI exit",
       "EMA 5 missed on traded and mark candles",
       "Confirmed opposite setup",
@@ -675,7 +676,10 @@
           for (const activity of activities) {
             const row = document.createElement("tr");
             const state = activity.state === "closed" ? "Filled" : "Partially filled";
-            for (const value of [activityTime(activity.time), activity.contract, activity.side, state,
+            const reason = (activity.reason || "").split(" · Cancelled:")[0];
+            const action = reason === strategyEntryReason ? "open" : "close";
+            const side = activity.side ? activity.side + "/" + action : null;
+            for (const value of [activityTime(activity.time), activity.contract, side, state,
               activity.filled_lots, activity.price, activity.reason]) {
               row.insertCell().textContent = value ?? "—";
             }
