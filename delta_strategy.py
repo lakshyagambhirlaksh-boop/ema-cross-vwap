@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 
+SIGNAL_EMA_LENGTH = 3
+
 RESOLUTIONS = {
     "1 min": (60, "1m"), "3 min": (180, "3m"), "5 min": (300, "5m"),
     "10 min": (600, "5m"), "15 min": (900, "15m"), "30 min": (1800, "30m"),
@@ -92,7 +94,7 @@ def session_vwap(candles):
 def entry_setup(candles, seconds):
     if len(candles) < 4:
         return None
-    average, vwap = ema(candles, 8), session_vwap(candles)
+    average, vwap = ema(candles, SIGNAL_EMA_LENGTH), session_vwap(candles)
     final = len(candles) - 1
     matches = {}
     for index in (final - 1, final - 2):

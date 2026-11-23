@@ -1,5 +1,5 @@
 ﻿//@version=6
-strategy("Delta India 3m - 8 EMA Crosses VWAP", overlay = true, pyramiding = 0,
+strategy("Delta India 3m - 3 EMA Crosses VWAP", overlay = true, pyramiding = 0,
      calc_on_every_tick = true, calc_on_order_fills = true)
 
 bool ignoreSessionOpen = input.bool(true, "Ignore crosses on the first bar of each session")
@@ -19,7 +19,7 @@ if not chart.is_standard
     runtime.error("Use standard candles so the indicators use exchange OHLC prices.")
 
 bool newSession = timeframe.change("1D") or barstate.isfirst
-float ema = ta.ema(close, 8)
+float ema = ta.ema(close, 3)
 float vwap = ta.vwap(ohlc4, newSession)
 float rsi = ta.rsi(close, 14)
 bool crossedAbove = ta.crossover(ema, vwap)
@@ -78,7 +78,7 @@ else if shortConfirmed and not longConfirmed and strategy.position_size >= 0 and
     strategy.entry("Short", strategy.short)
     strategy.exit("Short SL/TP", from_entry = "Short", stop = activeShortStop)
 
-plot(ema, "8 EMA", color = color.maroon, linewidth = 2)
+plot(ema, "3 EMA", color = color.maroon, linewidth = 2)
 plot(vwap, "Session VWAP (OHLC4)", color = color.blue, linewidth = 2)
 plotshape(longSignal, "Long signal candle", shape.circle, location.belowbar, color.blue, size = size.tiny)
 plotshape(longConfirmed, "Long confirmation candle", shape.triangleup, location.belowbar, color.lime, size = size.tiny)

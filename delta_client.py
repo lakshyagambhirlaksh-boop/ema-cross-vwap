@@ -43,7 +43,7 @@ ORDER_REASONS = {
     "ema-sl-": "Stop-loss",
     "ema-tp-": "Take-profit",
     "ema-save-": "Stop and target could not be saved",
-    "ema-entry-": "Confirmed 8 EMA / VWAP entry",
+    "ema-entry-": "Confirmed EMA / VWAP entry",
     "ema-rsi-": "RSI exit",
     "ema-five-": "EMA 5 missed on traded and mark candles",
     "ema-reverse-": "Confirmed opposite setup",
