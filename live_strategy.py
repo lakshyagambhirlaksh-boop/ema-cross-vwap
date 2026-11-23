@@ -431,7 +431,7 @@ class LiveStrategy:
                 return
             if closed[-1].time + seconds <= max(started, trade["opened_at"]):
                 return
-            signal = entry_setup(closed, seconds)
+            signal = entry_setup(closed, seconds, require_atr_gap=False)
             if signal and signal[0] != trade["side"]:
                 self.start_limit_exit(symbol, trade, size, "ema-reverse-")
 

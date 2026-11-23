@@ -91,11 +91,32 @@ def session_vwap(candles):
     return values
 
 
-def entry_setup(candles, seconds):
+def atr(candles, length=14):
+    if len(candles) < length:
+        return None
+    ranges = [candles[0].high - candles[0].low]
+    for previous, current in zip(candles, candles[1:]):
+        ranges.append(max(current.high - current.low,
+                          abs(current.high - previous.close), abs(current.low - previous.close)))
+    average = sum(ranges[:length]) / length
+    for value in ranges[length:]:
+        average += (value - average) / length
+    return average
+
+
+def entry_setup(candles, seconds, *, require_atr_gap=True):
     if len(candles) < 4:
         return None
     average, vwap = ema(candles, SIGNAL_EMA_LENGTH), session_vwap(candles)
     final = len(candles) - 1
+    if require_atr_gap:
+        volatility = atr(candles)
+        if volatility is None or vwap[final] is None:
+            return None
+        gap = average[final] - vwap[final]
+        minimum_gap = 0.10 * volatility
+    long_gap_ok = not require_atr_gap or (gap > 0 and gap >= minimum_gap)
+    short_gap_ok = not require_atr_gap or (gap < 0 and -gap >= minimum_gap)
     matches = {}
     for index in (final - 1, final - 2):
         if index < 1 or vwap[index] is None or vwap[index - 1] is None:
@@ -109,11 +130,11 @@ def entry_setup(candles, seconds):
             first_close = candles[index + 1].close
             if not min(signal.open, signal.close) <= first_close <= max(signal.open, signal.close):
                 continue
-        if (average[index - 1] <= vwap[index - 1] and average[index] > vwap[index]
+        if (long_gap_ok and average[index - 1] <= vwap[index - 1] and average[index] > vwap[index]
                 and signal.close > vwap[index] and confirmation.close > signal.high):
             if "buy" not in matches:
                 matches["buy"] = stop_before_signal(candles, vwap, index, "buy")
-        if (average[index - 1] >= vwap[index - 1] and average[index] < vwap[index]
+        if (short_gap_ok and average[index - 1] >= vwap[index - 1] and average[index] < vwap[index]
                 and signal.close < vwap[index] and confirmation.close < signal.low):
             if "sell" not in matches:
                 matches["sell"] = stop_before_signal(candles, vwap, index, "sell")
