@@ -175,7 +175,11 @@ def strategy_activity(orders):
     for order in orders:
         tagged = (order.get("client_order_id") or "").startswith(prefixes)
         if filled_lots(order) and (tagged or order.get("id") in verified_brackets):
-            rows.append({**activity_row(order), "strategy_verified": True})
+            opening = (order.get("client_order_id") or "").startswith("ema-entry-")
+            pnl = "0" if opening else (order.get("meta_data") or {}).get("pnl")
+            asset = ((order.get("product") or {}).get("settling_asset") or {}).get("symbol")
+            rows.append({**activity_row(order), "strategy_verified": True,
+                         "realized_pnl": pnl, "pnl_currency": asset})
     return rows
 
 

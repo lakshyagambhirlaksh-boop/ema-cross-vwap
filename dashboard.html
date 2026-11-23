@@ -213,6 +213,7 @@
           <thead><tr>
             <th scope="col">Time</th><th scope="col">Contract</th><th scope="col">Side</th>
             <th scope="col">Status</th><th scope="col">Filled lots</th><th scope="col">Fill price</th>
+            <th scope="col">Realized P&amp;L</th>
             <th scope="col">Reason</th>
           </tr></thead>
           <tbody id="activity-rows"></tbody>
@@ -665,14 +666,11 @@
         }
         if (!response.ok) throw new Error();
         let data = await response.json();
-        if (activityUrl === "/api/activity" && location.port === "18768" && !data.includes_bracket_fills) {
+        if (activityUrl === "/api/activity" && location.port === "18768" && !data.includes_realized_pnl) {
           const readOnlyUrl = "http://127.0.0.1:18769/api/activity";
           try {
             const updated = await fetch(readOnlyUrl, { cache: "no-store" });
-            if (updated.ok) {
-              data = await updated.json();
-              activityUrl = readOnlyUrl;
-            }
+            if (updated.ok) data = await updated.json();
           } catch {
             // Keep showing available tagged fills if the history tunnel is down.
           }
@@ -690,8 +688,10 @@
             const reason = (activity.reason || "").split(" · Cancelled:")[0];
             const action = reason === strategyEntryReason ? "open" : "close";
             const side = activity.side ? activity.side + "/" + action : null;
+            const pnl = action === "open" ? "0" : activity.realized_pnl == null ? null :
+              [activity.realized_pnl, activity.pnl_currency].filter(Boolean).join(" ");
             for (const value of [activityTime(activity.time), activity.contract, side, state,
-              activity.filled_lots, activity.price, activity.reason]) {
+              activity.filled_lots, activity.price, pnl, activity.reason]) {
               row.insertCell().textContent = value ?? "—";
             }
             rows.append(row);

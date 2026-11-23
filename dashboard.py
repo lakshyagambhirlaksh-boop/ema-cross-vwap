@@ -372,7 +372,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except (OSError, ValueError, KeyError, TypeError):
             self.send_json(502, {"message": "Delta order history unavailable."}, origin)
             return
-        self.send_json(200, {"activities": rows, "includes_bracket_fills": True}, origin)
+        self.send_json(200, {"activities": rows, "includes_bracket_fills": True,
+                             "includes_realized_pnl": True}, origin)
 
 
 class PositionsHandler(DashboardHandler):
