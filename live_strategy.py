@@ -252,7 +252,7 @@ class LiveStrategy:
                 if state == "rejected" and not post_only and not maker.get("no_fallback"):
                     trade = self.save_maker(symbol, trade, no_fallback=True)
                     maker = trade["maker"]
-                if filled or not allowed or (expired and maker.get("cancel_requested")) or not rejected:
+                if filled or not allowed or not rejected:
                     fallback = (allowed and expired and not filled and not maker.get("no_fallback")
                                 and not rejected and maker.get("cancel_requested"))
                     self.finish_maker(symbol, trade, filled, fallback)
@@ -261,6 +261,11 @@ class LiveStrategy:
         if rejected and replacements >= MAX_ORDER_REPLACEMENTS:
             self.finish_maker(symbol, trade, 0, False)
             raise ValueError("Entry abandoned after five rejected replacement attempts.")
+        if allowed and rejected and (expired or maker["checks"] >= MAKER_MAX_EDITS):
+            # A rejection can arrive after the resting-order window has elapsed.
+            trade = self.save_maker(symbol, trade, rejected=True, deadline=now + MAKER_DEADLINE,
+                                    next_check=now + MAKER_INTERVAL, checks=0, no_fallback=True)
+            return
         if not allowed or expired:
             self.finish_maker(symbol, trade, 0, False)
             return
@@ -290,7 +295,9 @@ class LiveStrategy:
                 if not self.maker_running(trade) or time.time() >= maker["deadline"]:
                     return
             trade = {**trade, "client_id": strategy_order_id("ema-entry-")}
-            trade = self.save_maker(symbol, trade, rejected=False, replacements=replacements + 1)
+            trade = self.save_maker(symbol, trade, rejected=False, replacements=replacements + 1,
+                                    deadline=time.time() + MAKER_DEADLINE, checks=0,
+                                    cancel_requested=False, no_fallback=True)
             self.submit_maker(symbol, trade, price)
         elif price != Decimal(str(order["limit_price"])):
             self.call("PUT", "/v2/orders", {"id": order["id"], "product_id": trade["id"],
