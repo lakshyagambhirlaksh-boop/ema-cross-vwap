@@ -62,7 +62,7 @@ bool waitForLong = canTrade and longSignal[1] and insidePreviousBody
 bool waitForShort = canTrade and shortSignal[1] and insidePreviousBody
 bool firstLongConfirmation = canTrade and longSignal[1] and close > high[1]
 bool firstShortConfirmation = canTrade and shortSignal[1] and close < low[1]
-float minGap = 0.10 * ta.atr(14)
+float minGap = 0.05 * ta.atr(14)
 bool longConfirmed = (firstLongConfirmation or (canTrade and waitForLong[1] and close > high[2])) and ema > vwap and ema - vwap >= minGap
 bool shortConfirmed = (firstShortConfirmation or (canTrade and waitForShort[1] and close < low[2])) and ema < vwap and vwap - ema >= minGap
 float lastLowBelowVwap = ta.valuewhen(close < vwap, low, 0)

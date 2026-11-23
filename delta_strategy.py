@@ -114,7 +114,7 @@ def entry_setup(candles, seconds, *, require_atr_gap=True):
         if volatility is None or vwap[final] is None:
             return None
         gap = average[final] - vwap[final]
-        minimum_gap = 0.10 * volatility
+        minimum_gap = 0.05 * volatility
     long_gap_ok = not require_atr_gap or (gap > 0 and gap >= minimum_gap)
     short_gap_ok = not require_atr_gap or (gap < 0 and -gap >= minimum_gap)
     matches = {}
