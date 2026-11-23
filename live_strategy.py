@@ -294,13 +294,22 @@ class LiveStrategy:
             return
         side = "sell" if size > 0 else "buy"
         client_id = state.get("client_id")
-        order = self.call("GET", "/v2/orders/client_order_id/" + client_id) if client_id else None
-        if order and order["state"] in ("closed", "cancelled"):
+        order = None
+        if client_id:
+            try:
+                order = self.call("GET", "/v2/orders/client_order_id/" + client_id)
+            except DeltaOrderError as error:
+                if error.code != "order_not_found":
+                    raise
+                query = urlencode({"product_ids": trade["id"], "states": "open,pending"})
+                active = self.call("GET", "/v2/orders?" + query)
+                order = next((item for item in active if item.get("client_order_id") == client_id), None)
+        if client_id and (not order or order["state"] in ("closed", "cancelled", "rejected")):
             remaining = int(self.position(trade["id"])["size"])
             if not remaining or (remaining > 0) != (size > 0) or abs(remaining) > trade["lots"]:
                 return
             size = remaining
-            trade = self.save_limit_exit(symbol, trade, client_id=None)
+            trade = self.save_limit_exit(symbol, trade, client_id=None, deadline=time.time() + 20)
             order = None
         if order and time.time() >= state["deadline"]:
             self.save_limit_exit(symbol, trade, next_check=time.time() + MAKER_INTERVAL)
