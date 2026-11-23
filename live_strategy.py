@@ -24,6 +24,13 @@ class DeltaOrderError(ValueError):
         super().__init__(f"Delta rejected {method} {path.split('?')[0]} ({code}).")
         self.code = str(code)
 
+    @property
+    def outcome_unknown(self):
+        return self.code.startswith("HTTP ") or self.code in (
+            "unknown_error", "internal_server_error", "internal_error", "request_timeout",
+            "duplicate_client_order_id",
+        )
+
 
 def write_state(path, state):
     temporary = path.with_suffix(".tmp")
@@ -153,15 +160,23 @@ class LiveStrategy:
                 "time_in_force": "gtc", "post_only": True, "client_order_id": trade["client_id"],
             })
         except DeltaOrderError as error:
-            if "post_only" not in error.code:
-                if error.code.startswith("HTTP ") or error.code in (
-                    "unknown_error", "internal_server_error", "internal_error", "request_timeout"
-                ):
-                    raise
-                with self.lock:
-                    self.save_trade(symbol, None)
+            if error.outcome_unknown:
                 raise
-            self.save_maker(symbol, trade, rejected=True)
+            post_only = "post_only" in error.code
+            self.save_maker(symbol, trade, rejected=True,
+                            no_fallback=trade["maker"].get("no_fallback", False) or not post_only)
+            if not post_only:
+                raise
+
+    def find_order(self, product_id, client_id):
+        try:
+            return self.call("GET", "/v2/orders/client_order_id/" + client_id)
+        except DeltaOrderError as error:
+            if error.code != "order_not_found":
+                raise
+        query = urlencode({"product_ids": product_id, "states": "open,pending"})
+        active = self.call("GET", "/v2/orders?" + query)
+        return next((item for item in active if item.get("client_order_id") == client_id), None)
 
     def maker_running(self, trade):
         return self.enabled and self.started_at == trade["maker"]["run_started"]
@@ -211,7 +226,14 @@ class LiveStrategy:
             return
 
         rejected = maker.get("rejected", False)
-        order = None if rejected else self.call("GET", "/v2/orders/client_order_id/" + trade["client_id"])
+        order = None if rejected else self.find_order(trade["id"], trade["client_id"])
+        if not rejected and not order:
+            if int(self.position(trade["id"])["size"]):
+                self.finish_maker(symbol, trade, True, False)
+                return
+            trade = self.save_maker(symbol, trade, rejected=True, no_fallback=True)
+            maker = trade["maker"]
+            rejected = True
         now = time.time()
         expired = now >= maker["deadline"]
         with self.lock:
@@ -219,19 +241,24 @@ class LiveStrategy:
         if order:
             state = order["state"]
             filled = int(order["size"]) - int(order["unfilled_size"])
-            if state not in ("closed", "cancelled"):
+            if state not in ("closed", "cancelled", "rejected"):
                 if not allowed or expired or filled:
                     self.cancel_maker(symbol, trade, order, allowed and expired and not maker.get("no_fallback"))
                     return
             else:
-                rejected = "post_only" in (order.get("cancellation_reason") or "")
+                post_only = "post_only" in (order.get("cancellation_reason") or "")
+                rejected = state == "rejected" or post_only
+                if state == "rejected" and not post_only and not maker.get("no_fallback"):
+                    trade = self.save_maker(symbol, trade, no_fallback=True)
+                    maker = trade["maker"]
                 if filled or not allowed or (expired and maker.get("cancel_requested")) or not rejected:
                     fallback = (allowed and expired and not filled and not maker.get("no_fallback")
                                 and (rejected or maker.get("cancel_requested")))
                     self.finish_maker(symbol, trade, filled, fallback)
                     return
         if not allowed or expired:
-            self.finish_maker(symbol, trade, 0, allowed and expired and rejected)
+            self.finish_maker(symbol, trade, 0,
+                              allowed and expired and rejected and not maker.get("no_fallback"))
             return
         if maker["checks"] >= MAKER_MAX_EDITS:
             return
@@ -252,6 +279,12 @@ class LiveStrategy:
         trade = self.save_maker(symbol, trade, checks=maker["checks"] + 1,
                                 next_check=now + MAKER_INTERVAL)
         if rejected:
+            if int(self.position(trade["id"])["size"]):
+                self.finish_maker(symbol, trade, True, False)
+                return
+            with self.lock:
+                if not self.maker_running(trade) or time.time() >= maker["deadline"]:
+                    return
             trade = {**trade, "client_id": strategy_order_id("ema-entry-")}
             trade = self.save_maker(symbol, trade, rejected=False)
             self.submit_maker(symbol, trade, price)
@@ -294,16 +327,7 @@ class LiveStrategy:
             return
         side = "sell" if size > 0 else "buy"
         client_id = state.get("client_id")
-        order = None
-        if client_id:
-            try:
-                order = self.call("GET", "/v2/orders/client_order_id/" + client_id)
-            except DeltaOrderError as error:
-                if error.code != "order_not_found":
-                    raise
-                query = urlencode({"product_ids": trade["id"], "states": "open,pending"})
-                active = self.call("GET", "/v2/orders?" + query)
-                order = next((item for item in active if item.get("client_order_id") == client_id), None)
+        order = self.find_order(trade["id"], client_id) if client_id else None
         if client_id and (not order or order["state"] in ("closed", "cancelled", "rejected")):
             remaining = int(self.position(trade["id"])["size"])
             if not remaining or (remaining > 0) != (size > 0) or abs(remaining) > trade["lots"]:
@@ -333,9 +357,7 @@ class LiveStrategy:
                     "client_order_id": client_id,
                 })
             except DeltaOrderError as error:
-                if not error.code.startswith("HTTP ") and error.code not in (
-                    "unknown_error", "internal_server_error", "internal_error", "request_timeout"
-                ):
+                if not error.outcome_unknown:
                     self.save_limit_exit(symbol, trade, client_id=None)
                 raise
 
@@ -348,10 +370,10 @@ class LiveStrategy:
         if not size:
             if not trade.get("filled"):
                 # An ambiguous entry is resolved by its exchange client ID before clearing it.
-                order = self.call("GET", "/v2/orders/client_order_id/" + trade["client_id"])
-                if order["state"] not in ("closed", "cancelled"):
+                order = self.find_order(trade["id"], trade["client_id"])
+                if order and order["state"] not in ("closed", "cancelled", "rejected"):
                     return
-                filled = int(order["size"]) - int(order["unfilled_size"])
+                filled = order and int(order["size"]) - int(order["unfilled_size"])
                 if filled:
                     raise ValueError("Entry filled but position has not been confirmed. Check Delta.")
             with self.lock:
