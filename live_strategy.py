@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 MAKER_INTERVAL = 2
 MAKER_MAX_EDITS = 9
 MAKER_DEADLINE = 19
+MAX_ORDER_REPLACEMENTS = 5
 
 
 class DeltaOrderError(ValueError):
@@ -253,12 +254,15 @@ class LiveStrategy:
                     maker = trade["maker"]
                 if filled or not allowed or (expired and maker.get("cancel_requested")) or not rejected:
                     fallback = (allowed and expired and not filled and not maker.get("no_fallback")
-                                and (rejected or maker.get("cancel_requested")))
+                                and not rejected and maker.get("cancel_requested"))
                     self.finish_maker(symbol, trade, filled, fallback)
                     return
+        replacements = maker.get("replacements", 0)
+        if rejected and replacements >= MAX_ORDER_REPLACEMENTS:
+            self.finish_maker(symbol, trade, 0, False)
+            raise ValueError("Entry abandoned after five rejected replacement attempts.")
         if not allowed or expired:
-            self.finish_maker(symbol, trade, 0,
-                              allowed and expired and rejected and not maker.get("no_fallback"))
+            self.finish_maker(symbol, trade, 0, False)
             return
         if maker["checks"] >= MAKER_MAX_EDITS:
             return
@@ -286,7 +290,7 @@ class LiveStrategy:
                 if not self.maker_running(trade) or time.time() >= maker["deadline"]:
                     return
             trade = {**trade, "client_id": strategy_order_id("ema-entry-")}
-            trade = self.save_maker(symbol, trade, rejected=False)
+            trade = self.save_maker(symbol, trade, rejected=False, replacements=replacements + 1)
             self.submit_maker(symbol, trade, price)
         elif price != Decimal(str(order["limit_price"])):
             self.call("PUT", "/v2/orders", {"id": order["id"], "product_id": trade["id"],
@@ -327,14 +331,18 @@ class LiveStrategy:
             return
         side = "sell" if size > 0 else "buy"
         client_id = state.get("client_id")
+        attempts = state.get("attempts", int(bool(client_id)))
         order = self.find_order(trade["id"], client_id) if client_id else None
         if client_id and (not order or order["state"] in ("closed", "cancelled", "rejected")):
             remaining = int(self.position(trade["id"])["size"])
             if not remaining or (remaining > 0) != (size > 0) or abs(remaining) > trade["lots"]:
                 return
             size = remaining
-            trade = self.save_limit_exit(symbol, trade, client_id=None, deadline=time.time() + 20)
+            trade = self.save_limit_exit(symbol, trade, client_id=None, attempts=attempts,
+                                         deadline=time.time() + 20)
             order = None
+        if not order and attempts >= 1 + MAX_ORDER_REPLACEMENTS:
+            raise ValueError("Exit retry limit reached. Position is still open. Check Delta.")
         if order and time.time() >= state["deadline"]:
             self.save_limit_exit(symbol, trade, next_check=time.time() + MAKER_INTERVAL)
             return
@@ -348,7 +356,7 @@ class LiveStrategy:
                 })
         else:
             client_id = strategy_order_id(state["reason"])
-            trade = self.save_limit_exit(symbol, trade, client_id=client_id)
+            trade = self.save_limit_exit(symbol, trade, client_id=client_id, attempts=attempts + 1)
             try:
                 self.call("POST", "/v2/orders", {
                     "product_symbol": symbol, "side": side, "size": abs(size),
