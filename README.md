@@ -15,8 +15,8 @@ The engine starts with new entries disabled on a fresh install. Select contracts
 
 ## Trading rules
 
-- An EMA 3 cross above or below session VWAP (OHLC4) creates a setup when the traded-price candle closes on the same side of VWAP. The next candle must close beyond the signal candle's high for a long or low for a short.
-- On the confirmation close, a new entry requires EMA 3 to be at least 0.05 × ATR(14) above VWAP for a long or below VWAP for a short.
+- An EMA 5 cross above or below session VWAP (OHLC4) creates a setup when the traded-price candle closes on the same side of VWAP. The next candle must close beyond the signal candle's high for a long or low for a short.
+- On the confirmation close, a new entry requires EMA 5 to be at least 0.05 × ATR(14) above VWAP for a long or below VWAP for a short.
 - If the first confirmation closes inside the signal candle's body, the setup gets one additional candle to confirm against the original high or low.
 - Entries start with a post-only limit order at the best bid or ask. The bot checks every two seconds and reprices up to nine times. After about 19 seconds it may use a market order if the maker order has no fills and cancellation is confirmed. If a maker order partially fills, the bot cancels the rest and protects the filled lots. Exchange latency can extend the wait.
 - A long stop uses the low of the most recent candle before the signal that closed below its own VWAP. A short stop uses the high of the most recent candle before the signal that closed above its own VWAP. If no prior candle qualifies, the trade is skipped. The target is 1.5 times the distance from the actual entry fill to that stop.

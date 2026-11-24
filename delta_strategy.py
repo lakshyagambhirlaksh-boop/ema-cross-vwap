@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 
-SIGNAL_EMA_LENGTH = 3
+SIGNAL_EMA_LENGTH = 5
 
 RESOLUTIONS = {
     "1 min": (60, "1m"), "3 min": (180, "3m"), "5 min": (300, "5m"),

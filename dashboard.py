@@ -73,10 +73,10 @@ def sample_indicators(timeframe):
                     if candles:
                         INDICATOR_HISTORY[history_key] = candles
                         return {"contract": symbol, "candle_time": candles[-1].time,
-                                "ema3": ema(candles, SIGNAL_EMA_LENGTH)[-1], "vwap": session_vwap(candles)[-1]}
+                                "ema5": ema(candles, SIGNAL_EMA_LENGTH)[-1], "vwap": session_vwap(candles)[-1]}
             except (OSError, ValueError, KeyError, TypeError):
                 pass
-            return {"contract": symbol, "candle_time": None, "ema3": None, "vwap": None}
+            return {"contract": symbol, "candle_time": None, "ema5": None, "vwap": None}
 
         sampled_at = time.monotonic()
         with ThreadPoolExecutor(max_workers=len(CONTRACTS)) as pool:
@@ -264,7 +264,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             self.send_json(200, {
                 "contract": symbol, "timeframe": timeframe, "candle_time": candle.time,
-                "ema3": ema(closed, SIGNAL_EMA_LENGTH)[-1], "vwap": session_vwap(closed)[-1],
+                "ema5": ema(closed, SIGNAL_EMA_LENGTH)[-1], "vwap": session_vwap(closed)[-1],
                 "mark_candle_available": any(item.time == candle.time for item in mark),
                 "entry_setup": entry_setup(closed, seconds),
                 "positions_readable": positions.get("success") is True,

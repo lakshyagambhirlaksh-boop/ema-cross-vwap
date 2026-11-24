@@ -174,7 +174,7 @@
         <div class="positions-table">
         <table aria-label="EMA and VWAP, first group of contracts">
           <thead><tr>
-            <th scope="col">Contract</th><th scope="col">3 EMA</th><th scope="col">VWAP</th>
+            <th scope="col">Contract</th><th scope="col">5 EMA</th><th scope="col">VWAP</th>
             <th scope="col" title="Candle open time in India Standard Time">Time (IST)</th>
           </tr></thead>
           <tbody id="indicators-left"></tbody>
@@ -183,7 +183,7 @@
         <div class="positions-table">
         <table aria-label="EMA and VWAP, second group of contracts">
           <thead><tr>
-            <th scope="col">Contract</th><th scope="col">3 EMA</th><th scope="col">VWAP</th>
+            <th scope="col">Contract</th><th scope="col">5 EMA</th><th scope="col">VWAP</th>
             <th scope="col" title="Candle open time in India Standard Time">Time (IST)</th>
           </tr></thead>
           <tbody id="indicators-right"></tbody>
@@ -562,7 +562,7 @@
             const row = document.createElement("tr");
             const values = [
               item.contract,
-              item.ema3 == null ? "—" : indicatorPrice.format(item.ema3),
+              item.ema5 == null ? "—" : indicatorPrice.format(item.ema5),
               item.vwap == null ? "—" : indicatorPrice.format(item.vwap),
               item.candle_time == null ? "—\n " :
                 indicatorDate.format(item.candle_time * 1000) + "\n" + indicatorTime.format(item.candle_time * 1000)
